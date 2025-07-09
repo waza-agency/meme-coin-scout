@@ -120,10 +120,8 @@ export class HolderAnalysisService {
       return analysis;
     } catch (error) {
       console.error(`❌ Failed to get real holder analysis for ${token.symbol}:`, error);
-      // Fallback to estimated data with warning
-      const fallbackAnalysis = this.getFallbackAnalysis(token);
-      console.warn(`⚠️ Using fallback holder analysis for ${token.symbol}`);
-      return fallbackAnalysis;
+      // NO FALLBACK - throw error if real data is not available
+      throw new Error(`No real holder data available for ${token.symbol} on ${token.blockchain}`);
     }
   }
 
@@ -150,8 +148,8 @@ export class HolderAnalysisService {
     } else if (blockchain === 'tron') {
       holderData = await this.getTronHolderData(token.address);
     } else {
-      // For other chains, try DexScreener API or fallback
-      holderData = await this.getDexScreenerHolderData(token);
+      // For other chains, try real APIs only
+      holderData = await this.getOtherChainHolderData(token);
     }
 
     // Analyze the real holder data
@@ -159,45 +157,91 @@ export class HolderAnalysisService {
   }
 
   /**
-   * Get Solana holder data using RPC API
+   * Get Solana holder data using real APIs
    */
   private async getSolanaHolderData(tokenAddress: string): Promise<any> {
     try {
-      // Use Solana RPC to get token accounts
-      const rpcUrl = 'https://api.mainnet-beta.solana.com';
+      // Try Solana Tracker API - provides real holder counts
+      try {
+        const solanaTrackerResponse = await axios.get(`https://data.solanatracker.io/tokens/${tokenAddress}/holders`, {
+          headers: {
+            'Accept': 'application/json'
+          },
+          timeout: 15000
+        });
+        
+        const totalHolders = solanaTrackerResponse.data?.total;
+        if (totalHolders && totalHolders > 0) {
+          console.log(`✅ Solana Tracker API: Found ${totalHolders} holders for ${tokenAddress}`);
+          return {
+            totalHolders,
+            blockchain: 'solana',
+            confidence: 1.0,
+            source: 'solana-tracker'
+          };
+        }
+      } catch (error) {
+        console.warn('Solana Tracker API failed:', error);
+      }
       
-      const response = await axios.post(rpcUrl, {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'getTokenLargestAccounts',
-        params: [tokenAddress, { commitment: 'confirmed' }]
-      }, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 15000
-      });
-
-      const largestAccounts = response.data?.result?.value || [];
+      // Try Birdeye API for Solana (free tier available)
+      try {
+        const birdeyeResponse = await axios.get(`https://public-api.birdeye.so/defi/token_overview`, {
+          params: { address: tokenAddress },
+          headers: {
+            'Accept': 'application/json'
+          },
+          timeout: 15000
+        });
+        
+        const holderCount = birdeyeResponse.data?.data?.holder;
+        if (holderCount && holderCount > 0) {
+          console.log(`✅ Birdeye API: Found ${holderCount} holders for ${tokenAddress}`);
+          return {
+            totalHolders: holderCount,
+            blockchain: 'solana',
+            confidence: 0.95,
+            source: 'birdeye'
+          };
+        }
+      } catch (error) {
+        console.warn('Birdeye API failed:', error);
+      }
       
-      // Get total supply
-      const supplyResponse = await axios.post(rpcUrl, {
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'getTokenSupply',
-        params: [tokenAddress, { commitment: 'confirmed' }]
-      });
-
-      const totalSupply = parseFloat(supplyResponse.data?.result?.value?.uiAmount || '0');
+      // Try Helius API (requires API key but has free tier)
+      const heliusApiKey = process.env.VITE_HELIUS_API_KEY;
+      if (heliusApiKey) {
+        try {
+          const heliusResponse = await axios.post(`https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`, {
+            jsonrpc: '2.0',
+            method: 'getTokenAccounts',
+            id: 'get-holders',
+            params: {
+              page: 1,
+              limit: 1,
+              mint: tokenAddress
+            }
+          }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 15000
+          });
+          
+          const totalHolders = heliusResponse.data?.result?.total;
+          if (totalHolders && totalHolders > 0) {
+            console.log(`✅ Helius API: Found ${totalHolders} holders for ${tokenAddress}`);
+            return {
+              totalHolders,
+              blockchain: 'solana',
+              confidence: 1.0,
+              source: 'helius'
+            };
+          }
+        } catch (error) {
+          console.warn('Helius API failed:', error);
+        }
+      }
       
-      // Estimate total holders from largest accounts (Solana limitation)
-      const estimatedHolders = Math.max(largestAccounts.length * 15, 1000); // Rough estimate
-      
-      return {
-        totalHolders: estimatedHolders,
-        largestAccounts,
-        totalSupply,
-        blockchain: 'solana',
-        confidence: 0.7 // Lower confidence due to RPC limitations
-      };
+      throw new Error('No real holder data available for Solana token');
     } catch (error) {
       console.warn('Failed to get Solana holder data:', error);
       throw error;
@@ -205,43 +249,92 @@ export class HolderAnalysisService {
   }
 
   /**
-   * Get Ethereum holder data using Etherscan API
+   * Get Ethereum holder data using real APIs
    */
   private async getEthereumHolderData(tokenAddress: string): Promise<any> {
     try {
-      // Use public Etherscan API (rate limited but free)
-      const response = await axios.get(`https://api.etherscan.io/api`, {
-        params: {
-          module: 'token',
-          action: 'tokenholderlist',
-          contractaddress: tokenAddress,
-          page: 1,
-          offset: 100,
-          sort: 'desc'
-        },
-        timeout: 15000
-      });
-
-      const holders = response.data?.result || [];
-      
-      // Get total supply
-      const supplyResponse = await axios.get(`https://api.etherscan.io/api`, {
-        params: {
-          module: 'stats',
-          action: 'tokensupply',
-          contractaddress: tokenAddress
+      // Try Moralis API with API key (has free tier)
+      const moralisApiKey = process.env.VITE_MORALIS_API_KEY;
+      if (moralisApiKey) {
+        try {
+          const moralisResponse = await axios.get(`https://deep-index.moralis.io/api/v2/erc20/${tokenAddress}/owners`, {
+            params: {
+              chain: 'eth',
+              limit: 1
+            },
+            headers: {
+              'Accept': 'application/json',
+              'X-API-Key': moralisApiKey
+            },
+            timeout: 15000
+          });
+          
+          const totalHolders = moralisResponse.data?.total || 0;
+          if (totalHolders > 0) {
+            console.log(`✅ Moralis API: Found ${totalHolders} holders for ${tokenAddress}`);
+            return {
+              totalHolders,
+              blockchain: 'ethereum',
+              confidence: 1.0,
+              source: 'moralis'
+            };
+          }
+        } catch (error) {
+          console.warn('Moralis API failed:', error);
         }
-      });
-
-      const totalSupply = parseFloat(supplyResponse.data?.result || '0');
+      }
       
-      return {
-        totalHolders: Math.max(holders.length * 20, 500), // Estimate from sample
-        holders,
-        totalSupply,
-        blockchain: 'ethereum',
-        confidence: 0.8
-      };
+      // Try Etherscan API with API key
+      const etherscanApiKey = process.env.VITE_ETHERSCAN_API_KEY;
+      if (etherscanApiKey) {
+        try {
+          const holderCountResponse = await axios.get(`https://api.etherscan.io/api`, {
+            params: {
+              module: 'token',
+              action: 'tokenholderlist',
+              contractaddress: tokenAddress,
+              page: 1,
+              offset: 10000, // Get sample to count holders
+              sort: 'desc',
+              apikey: etherscanApiKey
+            },
+            timeout: 15000
+          });
+
+          const holders = holderCountResponse.data?.result || [];
+          if (Array.isArray(holders) && holders.length > 0) {
+            // Etherscan doesn't give total count directly, but we can estimate from samples
+            const totalHolders = holders.length === 10000 ? holders.length * 2 : holders.length;
+            console.log(`✅ Etherscan API: Found ~${totalHolders} holders for ${tokenAddress}`);
+            return {
+              totalHolders,
+              blockchain: 'ethereum',
+              confidence: holders.length === 10000 ? 0.8 : 1.0, // Lower confidence if we hit the limit
+              source: 'etherscan'
+            };
+          }
+        } catch (error) {
+          console.warn('Etherscan API failed:', error);
+        }
+      }
+      
+      // Try DexScreener as fallback for basic token info
+      try {
+        const dexScreenerResponse = await axios.get(`https://api.dexscreener.com/latest/dex/search`, {
+          params: { q: tokenAddress },
+          timeout: 10000
+        });
+        
+        const pair = dexScreenerResponse.data?.pairs?.[0];
+        if (pair && pair.baseToken?.address?.toLowerCase() === tokenAddress.toLowerCase()) {
+          // DexScreener doesn't provide holder count, but we can check if token exists
+          console.log(`⚠️ DexScreener: Token exists but no holder data available for ${tokenAddress}`);
+        }
+      } catch (error) {
+        console.warn('DexScreener API failed:', error);
+      }
+      
+      throw new Error('No real holder data available for Ethereum token - API keys required');
     } catch (error) {
       console.warn('Failed to get Ethereum holder data:', error);
       throw error;
@@ -249,31 +342,76 @@ export class HolderAnalysisService {
   }
 
   /**
-   * Get Base chain holder data
+   * Get Base chain holder data using real APIs
    */
   private async getBaseHolderData(tokenAddress: string): Promise<any> {
     try {
-      // Use Basescan API (similar to Etherscan)
-      const response = await axios.get(`https://api.basescan.org/api`, {
-        params: {
-          module: 'token',
-          action: 'tokenholderlist',
-          contractaddress: tokenAddress,
-          page: 1,
-          offset: 100,
-          sort: 'desc'
-        },
-        timeout: 15000
-      });
-
-      const holders = response.data?.result || [];
+      // Try Moralis API with API key for Base chain (has free tier)
+      const moralisApiKey = process.env.VITE_MORALIS_API_KEY;
+      if (moralisApiKey) {
+        try {
+          const moralisResponse = await axios.get(`https://deep-index.moralis.io/api/v2/erc20/${tokenAddress}/owners`, {
+            params: {
+              chain: 'base',
+              limit: 1
+            },
+            headers: {
+              'Accept': 'application/json',
+              'X-API-Key': moralisApiKey
+            },
+            timeout: 15000
+          });
+          
+          const totalHolders = moralisResponse.data?.total || 0;
+          if (totalHolders > 0) {
+            console.log(`✅ Moralis API: Found ${totalHolders} holders for Base token ${tokenAddress}`);
+            return {
+              totalHolders,
+              blockchain: 'base',
+              confidence: 1.0,
+              source: 'moralis'
+            };
+          }
+        } catch (error) {
+          console.warn('Moralis API failed for Base:', error);
+        }
+      }
       
-      return {
-        totalHolders: Math.max(holders.length * 25, 200), // Base tends to have fewer holders
-        holders,
-        blockchain: 'base',
-        confidence: 0.75
-      };
+      // Try Basescan API with API key
+      const basescanApiKey = process.env.VITE_BASESCAN_API_KEY;
+      if (basescanApiKey) {
+        try {
+          const holderCountResponse = await axios.get(`https://api.basescan.org/api`, {
+            params: {
+              module: 'token',
+              action: 'tokenholderlist',
+              contractaddress: tokenAddress,
+              page: 1,
+              offset: 10000, // Get sample to count holders
+              sort: 'desc',
+              apikey: basescanApiKey
+            },
+            timeout: 15000
+          });
+
+          const holders = holderCountResponse.data?.result || [];
+          if (Array.isArray(holders) && holders.length > 0) {
+            // Basescan doesn't give total count directly
+            const totalHolders = holders.length === 10000 ? holders.length * 2 : holders.length;
+            console.log(`✅ Basescan API: Found ~${totalHolders} holders for Base token ${tokenAddress}`);
+            return {
+              totalHolders,
+              blockchain: 'base',
+              confidence: holders.length === 10000 ? 0.8 : 1.0,
+              source: 'basescan'
+            };
+          }
+        } catch (error) {
+          console.warn('Basescan API failed:', error);
+        }
+      }
+      
+      throw new Error('No real holder data available for Base token - API keys required');
     } catch (error) {
       console.warn('Failed to get Base holder data:', error);
       throw error;
@@ -281,22 +419,57 @@ export class HolderAnalysisService {
   }
 
   /**
-   * Get Tron holder data
+   * Get Tron holder data using real APIs
    */
   private async getTronHolderData(tokenAddress: string): Promise<any> {
     try {
-      // Use TronGrid API
-      const response = await axios.get(`https://api.trongrid.io/v1/contracts/${tokenAddress}/tokens`, {
-        timeout: 15000
-      });
+      // Try TronGrid API - free but rate limited
+      try {
+        const tronGridResponse = await axios.get(`https://api.trongrid.io/v1/contracts/${tokenAddress}/tokens`, {
+          timeout: 15000
+        });
 
-      const tokenData = response.data?.data?.[0] || {};
+        const tokenData = tronGridResponse.data?.data?.[0] || {};
+        const holderCount = tokenData.holder_count;
+        
+        if (holderCount && holderCount > 0) {
+          console.log(`✅ TronGrid API: Found ${holderCount} holders for Tron token ${tokenAddress}`);
+          return {
+            totalHolders: holderCount,
+            blockchain: 'tron',
+            confidence: 1.0,
+            source: 'trongrid'
+          };
+        }
+      } catch (error) {
+        console.warn('TronGrid API failed:', error);
+      }
       
-      return {
-        totalHolders: Math.max(tokenData.holder_count || 100, 100),
-        blockchain: 'tron',
-        confidence: 0.9 // TronGrid usually has accurate data
-      };
+      // Try TronScan API as backup
+      try {
+        const tronScanResponse = await axios.get(`https://apilist.tronscanapi.com/api/token`, {
+          params: { 
+            contract: tokenAddress,
+            showAll: 1 
+          },
+          timeout: 15000
+        });
+        
+        const holderCount = tronScanResponse.data?.data?.[0]?.holders;
+        if (holderCount && holderCount > 0) {
+          console.log(`✅ TronScan API: Found ${holderCount} holders for Tron token ${tokenAddress}`);
+          return {
+            totalHolders: holderCount,
+            blockchain: 'tron',
+            confidence: 0.95,
+            source: 'tronscan'
+          };
+        }
+      } catch (error) {
+        console.warn('TronScan API failed:', error);
+      }
+      
+      throw new Error('No real holder data available for Tron token');
     } catch (error) {
       console.warn('Failed to get Tron holder data:', error);
       throw error;
@@ -304,76 +477,131 @@ export class HolderAnalysisService {
   }
 
   /**
-   * Get holder data from DexScreener API as fallback
+   * Get holder data for other blockchains - REAL APIS ONLY
    */
-  private async getDexScreenerHolderData(token: TokenData): Promise<any> {
-    try {
-      if (!token.pairAddress) {
-        throw new Error('No pair address available');
+  private async getOtherChainHolderData(token: TokenData): Promise<any> {
+    const blockchain = token.blockchain.toLowerCase();
+    
+    // For Polygon/Matic - use Polygonscan
+    if (blockchain === 'polygon' || blockchain === 'matic') {
+      const polygonscanApiKey = process.env.VITE_POLYGONSCAN_API_KEY;
+      if (polygonscanApiKey) {
+        try {
+          const response = await axios.get(`https://api.polygonscan.com/api`, {
+            params: {
+              module: 'token',
+              action: 'tokenholderlist',
+              contractaddress: token.address,
+              page: 1,
+              offset: 10000,
+              sort: 'desc',
+              apikey: polygonscanApiKey
+            },
+            timeout: 15000
+          });
+          
+          const holders = response.data?.result || [];
+          if (Array.isArray(holders) && holders.length > 0) {
+            const totalHolders = holders.length === 10000 ? holders.length * 2 : holders.length;
+            console.log(`✅ Polygonscan API: Found ~${totalHolders} holders for ${blockchain} token ${token.address}`);
+            return {
+              totalHolders,
+              blockchain: blockchain,
+              confidence: holders.length === 10000 ? 0.8 : 1.0,
+              source: 'polygonscan'
+            };
+          }
+        } catch (error) {
+          console.warn('Polygonscan API failed:', error);
+        }
       }
-
-      const response = await axios.get(`https://api.dexscreener.com/latest/dex/pairs/${token.pairAddress}`, {
-        timeout: 10000
-      });
-
-      const pair = response.data?.pair;
-      if (!pair) {
-        throw new Error('No pair data found');
-      }
-
-      // Estimate holders from market data
-      const marketCap = parseFloat(pair.marketCap || '0');
-      const age = Date.now() - token.pairCreatedAt;
-      const volume24h = parseFloat(pair.volume?.h24 || '0');
-      
-      // More sophisticated estimation
-      const estimatedHolders = this.estimateHoldersFromMarketData(marketCap, age, volume24h);
-      
-      return {
-        totalHolders: estimatedHolders,
-        blockchain: token.blockchain,
-        confidence: 0.5, // Lower confidence for estimates
-        marketCap,
-        volume24h
-      };
-    } catch (error) {
-      console.warn('Failed to get DexScreener holder data:', error);
-      throw error;
     }
+    
+    // For BSC - use BscScan
+    if (blockchain === 'bsc' || blockchain === 'binance' || blockchain === 'bnb') {
+      const bscscanApiKey = process.env.VITE_BSCSCAN_API_KEY;
+      if (bscscanApiKey) {
+        try {
+          const response = await axios.get(`https://api.bscscan.com/api`, {
+            params: {
+              module: 'token',
+              action: 'tokenholderlist',
+              contractaddress: token.address,
+              page: 1,
+              offset: 10000,
+              sort: 'desc',
+              apikey: bscscanApiKey
+            },
+            timeout: 15000
+          });
+          
+          const holders = response.data?.result || [];
+          if (Array.isArray(holders) && holders.length > 0) {
+            const totalHolders = holders.length === 10000 ? holders.length * 2 : holders.length;
+            console.log(`✅ BscScan API: Found ~${totalHolders} holders for ${blockchain} token ${token.address}`);
+            return {
+              totalHolders,
+              blockchain: blockchain,
+              confidence: holders.length === 10000 ? 0.8 : 1.0,
+              source: 'bscscan'
+            };
+          }
+        } catch (error) {
+          console.warn('BscScan API failed:', error);
+        }
+      }
+    }
+    
+    // Try Moralis API as universal fallback (supports multiple chains)
+    const moralisApiKey = process.env.VITE_MORALIS_API_KEY;
+    if (moralisApiKey) {
+      const chainMap: Record<string, string> = {
+        'polygon': 'polygon',
+        'matic': 'polygon',
+        'bsc': 'bsc',
+        'binance': 'bsc',
+        'bnb': 'bsc',
+        'avalanche': 'avalanche',
+        'avax': 'avalanche',
+        'fantom': 'fantom',
+        'ftm': 'fantom'
+      };
+      
+      const moralisChain = chainMap[blockchain];
+      if (moralisChain) {
+        try {
+          const response = await axios.get(`https://deep-index.moralis.io/api/v2/erc20/${token.address}/owners`, {
+            params: {
+              chain: moralisChain,
+              limit: 1
+            },
+            headers: {
+              'Accept': 'application/json',
+              'X-API-Key': moralisApiKey
+            },
+            timeout: 15000
+          });
+          
+          const totalHolders = response.data?.total || 0;
+          if (totalHolders > 0) {
+            console.log(`✅ Moralis API: Found ${totalHolders} holders for ${blockchain} token ${token.address}`);
+            return {
+              totalHolders,
+              blockchain: blockchain,
+              confidence: 1.0,
+              source: 'moralis'
+            };
+          }
+        } catch (error) {
+          console.warn(`Moralis API failed for ${blockchain}:`, error);
+        }
+      }
+    }
+    
+    throw new Error(`No real holder data available for ${blockchain} token - API keys required`);
   }
 
-  /**
-   * Improved holder estimation from market data
-   */
-  private estimateHoldersFromMarketData(marketCap: number, age: number, volume24h: number): number {
-    const ageInDays = age / (24 * 60 * 60 * 1000);
-    
-    // More realistic estimation based on market patterns
-    let baseHolders = 0;
-    
-    // Market cap based estimation
-    if (marketCap > 100000000) baseHolders = 15000; // 100M+ = 15k+ holders
-    else if (marketCap > 50000000) baseHolders = 8000; // 50M+ = 8k+ holders
-    else if (marketCap > 10000000) baseHolders = 3000; // 10M+ = 3k+ holders
-    else if (marketCap > 1000000) baseHolders = 800; // 1M+ = 800+ holders
-    else if (marketCap > 100000) baseHolders = 200; // 100k+ = 200+ holders
-    else baseHolders = 50; // < 100k = 50+ holders
-    
-    // Age adjustment (more realistic)
-    if (ageInDays > 365) baseHolders *= 1.5; // Mature projects
-    else if (ageInDays > 180) baseHolders *= 1.2; // 6+ months
-    else if (ageInDays > 90) baseHolders *= 1.0; // 3+ months
-    else if (ageInDays < 30) baseHolders *= 0.7; // Very new projects
-    
-    // Volume activity adjustment
-    const volumeRatio = marketCap > 0 ? volume24h / marketCap : 0;
-    if (volumeRatio > 0.5) baseHolders *= 1.4; // Very high activity
-    else if (volumeRatio > 0.2) baseHolders *= 1.2; // High activity
-    else if (volumeRatio > 0.1) baseHolders *= 1.0; // Medium activity
-    else baseHolders *= 0.8; // Low activity
-    
-    return Math.max(50, Math.floor(baseHolders));
-  }
+
 
   /**
    * Analyze real holder data and create comprehensive analysis
@@ -611,26 +839,7 @@ export class HolderAnalysisService {
     return signals;
   }
 
-  /**
-   * Fallback analysis when real data is unavailable
-   */
-  private getFallbackAnalysis(token: TokenData): HolderAnalysisData {
-    const estimatedHolders = this.estimateHoldersFromMarketData(
-      token.marketCap || 0,
-      Date.now() - token.pairCreatedAt,
-      token.volume24h || 0
-    );
-    
-    // Create fallback analysis with estimated data
-    const mockHolderData = {
-      totalHolders: estimatedHolders,
-      blockchain: token.blockchain,
-      confidence: 0.3,
-      marketCap: token.marketCap
-    };
-    
-    return this.analyzeRealHolderData(mockHolderData, token);
-  }
+
 
   private calculateRiskScore(concentration: ConcentrationData, distribution: DistributionData, liquidityRisk: LiquidityRiskData): number {
     let score = 50;
