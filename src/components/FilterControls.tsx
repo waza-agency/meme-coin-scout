@@ -16,10 +16,43 @@ const FilterControls: React.FC<FilterControlsProps> = ({
     // Remove commas and dollar signs, then convert to number
     const cleanValue = value.replace(/[$,]/g, '');
     const numValue = parseInt(cleanValue) || 0;
-    onFilterChange({
+    
+    // Basic validation for range fields
+    let validatedValue = numValue;
+    
+    if (field === 'minMarketCap' && validatedValue < 0) validatedValue = 0;
+    if (field === 'maxMarketCap' && validatedValue < 1000) validatedValue = 1000;
+    if (field === 'minAge' && validatedValue < 0) validatedValue = 0;
+    if (field === 'maxAge' && validatedValue < 1) validatedValue = 1;
+    if (field === 'minLiquidity' && validatedValue < 0) validatedValue = 0;
+    if (field === 'maxLiquidity' && validatedValue < 1000) validatedValue = 1000;
+    
+    const newFilters = {
       ...filters,
-      [field]: numValue
-    });
+      [field]: validatedValue
+    };
+    
+    // Ensure min values are not greater than max values
+    if (field === 'minMarketCap' && validatedValue > filters.maxMarketCap) {
+      newFilters.maxMarketCap = validatedValue;
+    }
+    if (field === 'maxMarketCap' && validatedValue < filters.minMarketCap) {
+      newFilters.minMarketCap = validatedValue;
+    }
+    if (field === 'minAge' && validatedValue > filters.maxAge) {
+      newFilters.maxAge = validatedValue;
+    }
+    if (field === 'maxAge' && validatedValue < filters.minAge) {
+      newFilters.minAge = validatedValue;
+    }
+    if (field === 'minLiquidity' && validatedValue > filters.maxLiquidity) {
+      newFilters.maxLiquidity = validatedValue;
+    }
+    if (field === 'maxLiquidity' && validatedValue < filters.minLiquidity) {
+      newFilters.minLiquidity = validatedValue;
+    }
+    
+    onFilterChange(newFilters);
   };
 
   // Format number with commas for display
@@ -142,7 +175,17 @@ const FilterControls: React.FC<FilterControlsProps> = ({
 
       {/* Quick Presets */}
       <div className="mt-6">
-        <h4 className="text-sm font-medium text-gray-300 mb-2">Quick Presets</h4>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-medium text-gray-300">Quick Presets</h4>
+          <button
+            onClick={() => onFilterChange({ minMarketCap: 1000, maxMarketCap: 10000000, minAge: 0, maxAge: 30, minLiquidity: 1000, maxLiquidity: 5000000 })}
+            disabled={disabled}
+            className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs transition-colors"
+            title="Reset all filters to default values"
+          >
+            Reset All
+          </button>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => onFilterChange({ minMarketCap: 1000, maxMarketCap: 100000, minAge: 0, maxAge: 3, minLiquidity: 1000, maxLiquidity: 50000 })}
@@ -164,6 +207,13 @@ const FilterControls: React.FC<FilterControlsProps> = ({
             className="px-3 py-1 bg-crypto-light-gray text-gray-300 rounded text-sm hover:bg-gray-600 transition-colors"
           >
             Established
+          </button>
+          <button
+            onClick={() => onFilterChange({ minMarketCap: 10000, maxMarketCap: 500000, minAge: 0, maxAge: 14, minLiquidity: 5000, maxLiquidity: 100000 })}
+            disabled={disabled}
+            className="px-3 py-1 bg-crypto-light-gray text-gray-300 rounded text-sm hover:bg-gray-600 transition-colors"
+          >
+            Micro Caps
           </button>
         </div>
       </div>

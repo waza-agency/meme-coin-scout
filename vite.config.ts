@@ -7,6 +7,12 @@ export default defineConfig({
     port: 3000,
     open: true
   },
+  define: {
+    global: 'globalThis',
+  },
+  optimizeDeps: {
+    include: ['snoowrap']
+  },
   test: {
     globals: true,
     environment: 'jsdom',

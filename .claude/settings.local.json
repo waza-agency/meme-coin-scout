@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude config get --format json)",
+      "Bash(ls:*)",
+      "Bash(npm run build:*)",
+      "Bash(grep:*)",
+      "Bash(npm run dev:*)",
+      "Bash(pkill:*)",
+      "Bash(taskkill:*)",
+      "WebFetch(domain:docs.x.ai)",
+      "Bash(./clear-cache.bat)",
+      "Bash(npm cache clean:*)",
+      "Bash(rm:*)",
+      "Bash(npm install express cors dotenv)",
+      "Bash(npm install:*)",
+      "Bash(curl:*)",
+      "Bash(npm run server:*)",
+      "Bash(npm start)",
+      "Bash(dir:*)",
+      "Bash(timeout 10 npm run dev)",
+      "Bash(find:*)",
+      "Bash(node:*)",
+      "Bash(devvit new:*)"
+    ],
+    "deny": []
+  }
+}

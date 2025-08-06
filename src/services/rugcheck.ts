@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { cacheService, CACHE_TTL } from './cache';
 
 export interface RugCheckResponse {
   mint: string;
@@ -76,8 +77,17 @@ class RugCheckService {
    * Get token risk analysis from rugcheck.xyz
    */
   async getTokenRisk(tokenAddress: string): Promise<RugCheckRiskData | null> {
+    // Check cache first
+    const cacheKey = cacheService.generateKey('rugcheck', tokenAddress);
+    const cachedData = cacheService.get<RugCheckRiskData | null>(cacheKey);
+    
+    if (cachedData !== null) {
+      console.log(`💰 Cache hit for RugCheck: ${tokenAddress} - FREE!`);
+      return cachedData;
+    }
+    
     try {
-      console.log(`🔍 Fetching rugcheck data for token: ${tokenAddress}`);
+      console.log(`🔍 RugCheck API call for token: ${tokenAddress} - FREE API but caching for performance`);
       
       const response = await axios.get<RugCheckResponse>(
         `${this.baseUrl}/tokens/${tokenAddress}/report`,
@@ -130,6 +140,10 @@ class RugCheckService {
         risksCount: riskData.risks.length
       });
 
+      // Cache the result for 5 minutes (free API, short cache for performance)
+      cacheService.set(cacheKey, riskData, CACHE_TTL.RUGCHECK);
+      console.log(`📦 Cached RugCheck data for ${tokenAddress} (5 min TTL)`);
+
       return riskData;
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -150,6 +164,11 @@ class RugCheckService {
       } else {
         console.error(`❌ Unexpected error fetching rugcheck data for ${tokenAddress}:`, error);
       }
+      
+      // Cache null result to prevent repeated failed API calls
+      cacheService.set(cacheKey, null, CACHE_TTL.RUGCHECK);
+      console.log(`📦 Cached null RugCheck result for ${tokenAddress} (5 min TTL - prevents repeated failures)`);
+      
       return null;
     }
   }

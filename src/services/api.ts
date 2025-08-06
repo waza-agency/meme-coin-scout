@@ -1,6 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
-import { DexScreenerResponse, Coin, Blockchain, ApiError } from '../types';
+import { DexScreenerResponse, Coin, Blockchain } from '../types';
 import { BLOCKCHAIN_CONFIGS, CORS_PROXIES } from '../config/blockchains';
+import { cacheService, CACHE_TTL } from './cache';
 
 // Use a more specific search approach for DexScreener
 const DEX_SCREENER_SEARCH_URL = 'https://api.dexscreener.com/latest/dex/search';
@@ -71,18 +72,35 @@ class ApiService {
   }
 
   async searchPairsForBlockchain(blockchain: Blockchain, quoteSymbol: string): Promise<Coin[]> {
+    // Skip single-letter searches that cause CORS errors
+    if (quoteSymbol.length === 1 && /^[A-Z0-9]$/i.test(quoteSymbol)) {
+      console.log(`⏩ Skipping single-letter search: ${quoteSymbol} (causes CORS issues)`);
+      return [];
+    }
+    
+    // Check cache first
+    const cacheKey = cacheService.generateKey('dexscreener', blockchain, quoteSymbol);
+    const cachedData = cacheService.get<Coin[]>(cacheKey);
+    
+    if (cachedData) {
+      console.log(`💰 Cache hit for DexScreener search: ${blockchain}/${quoteSymbol} - SAVED API CALL!`);
+      return cachedData;
+    }
+    
     try {
       // Search for pairs using the format "QuoteSymbol" to get pairs on specific blockchains
       const searchQuery = quoteSymbol;
       const searchUrl = `${DEX_SCREENER_SEARCH_URL}?q=${encodeURIComponent(searchQuery)}`;
       
-      console.log(`Searching for pairs with query: ${searchQuery} on ${blockchain}`);
+      console.log(`🔍 DexScreener API call: ${searchQuery} on ${blockchain} - API COST INCURRED`);
       
       const response = await this.makeRequest(searchUrl);
       const data: DexScreenerResponse = response.data;
       
       if (!data || !data.pairs || !Array.isArray(data.pairs)) {
         console.log('No pairs found in response');
+        // Cache empty results too (to avoid repeated failed calls)
+        cacheService.set(cacheKey, [], CACHE_TTL.DEXSCREENER_SEARCH);
         return [];
       }
 
@@ -102,9 +120,16 @@ class ApiService {
       });
 
       console.log(`Found ${filteredPairs.length} pairs for ${blockchain} after filtering`);
+      
+      // Cache the result for 5 minutes
+      cacheService.set(cacheKey, filteredPairs, CACHE_TTL.DEXSCREENER_SEARCH);
+      console.log(`📦 Cached DexScreener search: ${blockchain}/${quoteSymbol} (5 min TTL)`);
+      
       return filteredPairs;
     } catch (error) {
       console.error(`Error searching pairs for ${blockchain} with quote ${quoteSymbol}:`, error);
+      // Cache empty result to avoid repeated failed calls
+      cacheService.set(cacheKey, [], CACHE_TTL.DEXSCREENER_SEARCH);
       return []; // Return empty array instead of throwing to allow other searches to continue
     }
   }
@@ -129,6 +154,7 @@ class ApiService {
       // Popular meme tokens and patterns
       'MEME', 'SHIB', 'DOGE', 'PEPE', 'FLOKI', 'BONK',
       'USELESS', 'USELESS COIN', // Adding specific search for useless coin
+      'DICKBUTT', 'BUTT', 'DICK', // Adding more specific searches
       
       // Common trading pairs
       'BTC', 'ETH', 'BNB',
@@ -137,27 +163,47 @@ class ApiService {
       'BABY', 'SAFE', 'MOON', 'ELON', 'SHIBA', 'INU',
       'ROCKET', 'DIAMOND', 'APE', 'WOJAK', 'CHAD',
       'CATS', 'DOGS', 'FROG', 'BEAR', 'BULL',
+      'TRUMP', 'BIDEN', 'PUTIN', 'XI', // Political memes
+      'LAMBO', 'RICH', 'POOR', 'WAGMI', // Crypto culture
+      'GM', 'GN', 'LFG', 'NGMI', // Crypto slang
       
       // Blockchain-specific popular tokens
-      ...(blockchain === 'solana' ? ['WSOL', 'PYTH', 'JUP', 'WIF', 'POPCAT', 'MYRO', 'BOME'] : []),
-      ...(blockchain === 'base' ? ['CBETH', 'AERO', 'BALD', 'TOSHI', 'DEGEN'] : []),
-      ...(blockchain === 'sui' ? ['CETUS', 'TURBOS', 'SUI', 'BUCK'] : []),
+      ...(blockchain === 'solana' ? ['WSOL', 'PYTH', 'JUP', 'WIF', 'POPCAT', 'MYRO', 'BOME', 'SMOL', 'PONKE'] : []),
+      ...(blockchain === 'base' ? ['CBETH', 'AERO', 'BALD', 'TOSHI', 'DEGEN', 'BRETT'] : []),
+      ...(blockchain === 'sui' ? ['CETUS', 'TURBOS', 'SUI', 'BUCK', 'BLUB'] : []),
       ...(blockchain === 'tron' ? ['JST', 'SUN', 'WIN', 'NFT', 'BTT'] : []),
       
       // Generic searches to catch more tokens
       'TOKEN', 'COIN', 'PUMP', 'MOON', 'FINANCE', 'PROTOCOL',
+      'SWAP', 'DEX', 'DAO', 'DEFI', 'NFT',
       
-      // Additional alphabet searches to find more diverse tokens
-      'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-      'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-      'U', 'V', 'W', 'X', 'Y', 'Z'
+      // Two-letter combinations to find more tokens
+      'AA', 'AI', 'GO', 'UP', 'OK', 'NO', 'YES', 'LOL',
+      
+      // Popular token searches (removed single letters that cause CORS issues)
+      'BTC', 'ETH', 'SOL',
+      
+      // Numbers and combinations (removed single digits)
+      '420', '69', '100', '1000', '10000', '100X', '1000X'
     ];
 
     console.log(`Will search with ${searchQueries.length} different queries`);
 
-    const promises = searchQueries.map(query => 
-      this.searchPairsForBlockchain(blockchain, query)
-    );
+    // Also search for specific known contract addresses
+    const knownContracts: Record<Blockchain, string[]> = {
+      solana: [
+        'SBYS2yTH988WFCKUfDzXz26rtHmKBgMhxJ99Tjpbonk', // DICKBUTT
+        // Add more known contracts here
+      ],
+      base: [],
+      sui: [],
+      tron: []
+    };
+
+    const promises = [
+      ...searchQueries.map(query => this.searchPairsForBlockchain(blockchain, query)),
+      ...knownContracts[blockchain].map(address => this.searchByContractAddress(address))
+    ];
 
     try {
       const results = await Promise.allSettled(promises);
@@ -247,6 +293,28 @@ class ApiService {
     } catch (error) {
       console.error('API connection test failed:', error);
       return false;
+    }
+  }
+
+  // Method to search by contract address
+  async searchByContractAddress(address: string): Promise<Coin[]> {
+    try {
+      const searchUrl = `https://api.dexscreener.com/latest/dex/tokens/${address}`;
+      console.log(`Searching for token by contract address: ${address}`);
+      
+      const response = await this.makeRequest(searchUrl);
+      const data: DexScreenerResponse = response.data;
+      
+      if (!data || !data.pairs || !Array.isArray(data.pairs)) {
+        console.log('No pairs found for contract address');
+        return [];
+      }
+
+      console.log(`Found ${data.pairs.length} pairs for contract ${address}`);
+      return data.pairs;
+    } catch (error) {
+      console.error(`Error searching by contract address ${address}:`, error);
+      return [];
     }
   }
 }

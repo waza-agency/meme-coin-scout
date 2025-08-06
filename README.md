@@ -7,6 +7,7 @@ A specialized web-based tool for sophisticated cryptocurrency traders to identif
 - **Multi-blockchain Support**: Screen coins on Solana, Sui, Base, and Tron
 - **Advanced Filtering**: Filter by market cap range and coin age
 - **Real-time Data**: Fetches live data from DexScreener API
+- **Social Sentiment Analysis**: Reddit-powered social mentions (free) with Twitter fallback (premium)
 - **Responsive Design**: Works seamlessly on desktop and mobile
 - **Direct Integration**: Click any coin to view detailed analysis on DexScreener
 
@@ -36,8 +37,48 @@ A specialized web-based tool for sophisticated cryptocurrency traders to identif
    npm run dev
    ```
 
-4. **Open your browser**
+4. **Configure Social Mentions (Optional)**
+   Create a `.env.local` file in the root directory:
+   ```env
+   # Social Mentions Configuration
+   VITE_USE_REDDIT_SOCIAL=true                    # Use Reddit (free, default)
+   VITE_TWITTER_BEARER_TOKEN=your_twitter_token   # For Twitter fallback (optional)
+   ```
+
+5. **Open your browser**
    Navigate to `http://localhost:3000`
+
+## Social Mentions Feature
+
+The app now includes social sentiment analysis with two data sources:
+
+### Reddit Integration (Default - FREE)
+- ✅ **No API keys required**
+- ✅ **No rate limits**
+- ✅ **Real-time data from crypto subreddits**
+- Searches across: r/cryptocurrency, r/CryptoMoonShots, r/SatoshiStreetBets, and more
+- Analyzes sentiment using keyword matching and engagement metrics
+- Provides detailed mention analysis with source attribution
+
+### Twitter Integration (Fallback - PREMIUM)
+- 🔑 **Requires Twitter API Bearer Token**
+- ⏱️ **Rate limited (15 requests per 15 minutes)**
+- 🐦 **Official Twitter API v2 integration**
+- Used automatically when Reddit data is insufficient (if token provided)
+
+### Configuration Options
+```env
+# Use Reddit as primary (recommended)
+VITE_USE_REDDIT_SOCIAL=true
+
+# Use Twitter as primary (requires API key)
+VITE_USE_REDDIT_SOCIAL=false
+VITE_TWITTER_BEARER_TOKEN=your_bearer_token
+
+# Hybrid mode: Reddit primary, Twitter fallback
+VITE_USE_REDDIT_SOCIAL=true
+VITE_TWITTER_BEARER_TOKEN=your_bearer_token
+```
 
 ## Usage
 

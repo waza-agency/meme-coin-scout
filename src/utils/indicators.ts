@@ -84,8 +84,8 @@ export const calculateSocialMentionsIndicator = (
       trend: 'stable',
       changePercent: 0,
       current24h: 0,
-      label: 'No Data',
-      color: 'text-gray-500',
+      label: 'API Error',
+      color: 'text-red-500',
       sentiment: 'neutral',
       confidence: 0,
     };
@@ -452,4 +452,9 @@ export function getWhaleActivityEmoji(trend: 'bullish' | 'bearish' | 'neutral'):
     case 'bearish': return '🐋📉';
     case 'neutral': return '🐋➡️';
   }
-} 
+}
+
+export const getRiskLevel = (coin: Coin): 'low' | 'medium' | 'high' => {
+  const riskIndicator = calculateRiskIndicator(coin);
+  return riskIndicator.level;
+}; 

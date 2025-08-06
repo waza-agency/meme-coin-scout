@@ -111,6 +111,8 @@ export interface FilterCriteria {
 
 export type Blockchain = 'solana' | 'sui' | 'base' | 'tron';
 
+export type ViewMode = 'compact' | 'medium' | 'detailed';
+
 export interface BlockchainConfig {
   name: string;
   chainId: string;

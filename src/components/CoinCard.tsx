@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ExternalLink, TrendingUp, TrendingDown, Copy, Check } from 'lucide-react';
+import { ExternalLink, TrendingUp, TrendingDown, Copy, Check, Users } from 'lucide-react';
 import { Coin } from '../types';
-import { formatMarketCap, formatAge, calculateAge, getTokenImageUrl } from '../utils/filters';
+import { formatMarketCap, formatAge, calculateAge, getTokenImageUrl, getBubblemapsUrl } from '../utils/filters';
 import { calculateLiquidityIndicator, calculateRiskIndicator, calculateSocialMentionsIndicator, calculateWhaleActivityIndicator } from '../utils/indicators';
 import { rugCheckService, RugCheckRiskData } from '../services/rugcheck';
 import { socialMentionsService } from '../services/social-mentions';
@@ -17,6 +17,7 @@ import WhaleActivityIndicator from './WhaleActivityIndicator';
 import { TechnicalAnalysisIndicator } from './TechnicalAnalysisIndicator';
 import { HolderAnalysisIndicator } from './HolderAnalysisIndicator';
 import RugCheckModal from './RugCheckModal';
+import SocialMentionsError from './SocialMentionsError';
 
 interface CoinCardProps {
   coin: Coin;
@@ -27,6 +28,7 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
   const [rugCheckLoading, setRugCheckLoading] = useState(false);
   const [socialMentionsData, setSocialMentionsData] = useState<SocialMentionsData | null>(null);
   const [socialMentionsLoading, setSocialMentionsLoading] = useState(false);
+  const [socialMentionsError, setSocialMentionsError] = useState<string | null>(null);
   const [whaleActivityData, setWhaleActivityData] = useState<WhaleActivityData | null>(null);
   const [whaleActivityLoading, setWhaleActivityLoading] = useState(false);
   const [technicalData, setTechnicalData] = useState<TechnicalData | null>(null);
@@ -66,13 +68,21 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
   useEffect(() => {
     const fetchSocialMentionsData = async () => {
       setSocialMentionsLoading(true);
+      setSocialMentionsError(null);
       try {
         // Use token symbol as the search query
         const searchQuery = coin.baseToken.symbol;
         const data = await socialMentionsService.searchMentions(searchQuery, '24h');
-        setSocialMentionsData(data);
-      } catch (error) {
+        if (data === null) {
+          // API returned null - this means real APIs are unavailable (likely rate limited)
+          setSocialMentionsError(null); // Don't show error, just show no data
+          setSocialMentionsData(null);
+        } else {
+          setSocialMentionsData(data);
+        }
+      } catch (error: any) {
         console.warn('Failed to fetch social mentions data:', error);
+        setSocialMentionsError(error.message || 'Failed to fetch social data');
       } finally {
         setSocialMentionsLoading(false);
       }
@@ -295,8 +305,8 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
           <div className="text-xs text-gray-500">
             {socialMentionsLoading ? (
               <span className="animate-pulse">🔄</span>
-            ) : socialMentionsData && socialMentionsData.current24h > 0 ? (
-              <span title="Social mentions data available">📱</span>
+            ) : socialMentionsData ? (
+              <span title={`${socialMentionsData.current24h} social mentions`}>📱</span>
             ) : (
               <span title="No social mentions data">📱</span>
             )}
@@ -343,6 +353,25 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
               )}
             </button>
           </div>
+        </div>
+
+        {/* View Holders Button */}
+        <div className="flex items-center justify-between">
+          <span className="text-gray-400 text-sm">Holders</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const bubblemapsUrl = getBubblemapsUrl(coin);
+              if (bubblemapsUrl) {
+                window.open(bubblemapsUrl, '_blank', 'noopener,noreferrer');
+              }
+            }}
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-crypto-accent hover:bg-crypto-accent-hover text-white rounded transition-colors"
+            title="View holder distribution on Bubblemaps"
+          >
+            <Users className="w-3 h-3" />
+            View Holders
+          </button>
         </div>
 
         {/* Blockchain */}
@@ -400,7 +429,9 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
         )}
 
         {/* Social Mentions */}
-        {socialMentionsData && socialMentionsData.current24h > 0 && (
+        {socialMentionsError ? (
+          <SocialMentionsError error={socialMentionsError} />
+        ) : socialMentionsData ? (
           <div className="flex items-center justify-between">
             <span className="text-gray-400 text-sm">Social 24h</span>
             <div className="flex items-center gap-1">
@@ -416,6 +447,13 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
               )}
             </div>
           </div>
+        ) : socialMentionsLoading ? (
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400 text-sm">Social 24h</span>
+            <span className="text-gray-400 text-sm animate-pulse">Loading...</span>
+          </div>
+        ) : (
+          <SocialMentionsError />
         )}
 
         {/* Price Change (if available) */}

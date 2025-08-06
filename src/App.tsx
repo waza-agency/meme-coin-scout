@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
-import { Loader2, AlertCircle, Search } from 'lucide-react';
-import { Coin, FilterCriteria, Blockchain } from './types';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { Loader2, AlertCircle, Search, RefreshCw } from 'lucide-react';
+import { Coin, FilterCriteria, Blockchain, ViewMode } from './types';
 import { apiService } from './services/api';
 import { filterCoins, sortCoinsByMarketCap } from './utils/filters';
 import { SUPPORTED_BLOCKCHAINS, BLOCKCHAIN_CONFIGS } from './config/blockchains';
@@ -11,6 +11,17 @@ import LoadingSpinner from './components/LoadingSpinner';
 import ErrorMessage from './components/ErrorMessage';
 import NoResults from './components/NoResults';
 import ContractAnalyzer from './components/ContractAnalyzer';
+import ViewSelector from './components/ViewSelector';
+import DonationBanner from './components/DonationBanner';
+import ApiStatus from './components/ApiStatus';
+import FilterStatus from './components/FilterStatus';
+import './utils/test-apis'; // Load API test utilities
+import './utils/api-monitor'; // Load API error monitoring
+import './utils/social-mentions-debug'; // Load social mentions debugging
+import './debug-env.js'; // Load environment debugging
+import '../clear-cache.js'; // Load cache clearing utilities
+import { apiMonitor } from './utils/api-monitor';
+import { runAllFilterTests } from './utils/filter-test';
 
 function App() {
   const [selectedBlockchain, setSelectedBlockchain] = useState<Blockchain>('solana');
@@ -26,6 +37,29 @@ function App() {
     minLiquidity: 1000,
     maxLiquidity: 5000000
   });
+  
+  // Auto-refresh state
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [resultLimit, setResultLimit] = useState<number>(30);
+  const [viewMode, setViewMode] = useState<ViewMode>('detailed');
+  const [apiErrors, setApiErrors] = useState({
+    xai: false,
+    twitter: false,
+    rugcheck: false,
+    solanaTracker: false
+  });
+
+  // Subscribe to API error monitoring
+  useEffect(() => {
+    const unsubscribe = apiMonitor.subscribe((errors) => {
+      setApiErrors(errors);
+    });
+    
+    return unsubscribe;
+  }, []);
 
   // Test API connection on component mount
   useEffect(() => {
@@ -43,13 +77,46 @@ function App() {
     };
     
     testConnection();
+    
+    // Run filter tests in development mode
+    if (process.env.NODE_ENV === 'development') {
+      console.log('\n🧪 Running filter tests...');
+      setTimeout(() => {
+        runAllFilterTests();
+      }, 1000);
+    }
   }, []);
 
-  const handleSearch = useCallback(async () => {
-    setIsLoading(true);
+  // Helper function to compare coin arrays
+  const areCoinsEqual = (coins1: Coin[], coins2: Coin[]) => {
+    if (coins1.length !== coins2.length) return false;
+    
+    const coinMap = new Map(coins2.map(c => [c.pairAddress, c]));
+    
+    return coins1.every(coin1 => {
+      const coin2 = coinMap.get(coin1.pairAddress);
+      if (!coin2) return false;
+      
+      // Compare relevant fields that might change
+      return (
+        coin1.marketCap === coin2.marketCap &&
+        coin1.liquidity?.usd === coin2.liquidity?.usd &&
+        coin1.pairCreatedAt === coin2.pairCreatedAt &&
+        coin1.priceUsd === coin2.priceUsd &&
+        coin1.volume?.h24 === coin2.volume?.h24
+      );
+    });
+  };
+
+  const handleSearch = useCallback(async (isAutoRefresh = false) => {
+    if (isAutoRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
     
-    console.log(`🔍 Starting search for ${selectedBlockchain}...`);
+    console.log(`${isAutoRefresh ? '🔄 Auto-refreshing' : '🔍 Starting search'} for ${selectedBlockchain}...`);
     console.log('Filters:', filters);
     
     try {
@@ -67,8 +134,23 @@ function App() {
       const sorted = sortCoinsByMarketCap(filtered);
       console.log(`📊 Sorted ${sorted.length} coins by market cap`);
       
-      setAllCoins(coins);
-      setFilteredCoins(sorted);
+      // Apply result limit
+      const limited = sorted.slice(0, resultLimit);
+      console.log(`📊 Showing ${limited.length} results (limit: ${resultLimit})`)
+      
+      // Only update state if data has changed
+      if (!isAutoRefresh || !areCoinsEqual(limited, filteredCoins)) {
+        setAllCoins(coins);
+        setFilteredCoins(limited);
+        
+        if (isAutoRefresh && filteredCoins.length > 0) {
+          console.log('🔄 Data has changed, updating display');
+        }
+      } else if (isAutoRefresh) {
+        console.log('✅ No changes detected, keeping current display');
+      }
+      
+      setLastRefresh(new Date());
       
       if (coins.length === 0) {
         console.log('⚠️ No coins found from API');
@@ -80,19 +162,35 @@ function App() {
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
-      console.error('❌ Search failed:', errorMessage);
-      setError(errorMessage);
-      setAllCoins([]);
-      setFilteredCoins([]);
+      console.error(`❌ ${isAutoRefresh ? 'Auto-refresh' : 'Search'} failed:`, errorMessage);
+      if (!isAutoRefresh) {
+        setError(errorMessage);
+        setAllCoins([]);
+        setFilteredCoins([]);
+      }
     } finally {
-      setIsLoading(false);
+      if (isAutoRefresh) {
+        setIsRefreshing(false);
+      } else {
+        setIsLoading(false);
+      }
     }
-  }, [selectedBlockchain, filters]);
+  }, [selectedBlockchain, filters, filteredCoins, resultLimit]);
 
   const handleFilterChange = useCallback((newFilters: FilterCriteria) => {
     console.log('🔧 Filter changed:', newFilters);
     setFilters(newFilters);
-  }, []);
+    
+    // Automatically re-filter existing data when filters change
+    if (allCoins.length > 0) {
+      console.log('🔄 Auto-filtering existing data with new criteria');
+      const filtered = filterCoins(allCoins, newFilters);
+      const sorted = sortCoinsByMarketCap(filtered);
+      const limited = sorted.slice(0, resultLimit);
+      setFilteredCoins(limited);
+      console.log(`✅ Re-filtered to ${limited.length} coins`);
+    }
+  }, [allCoins, resultLimit]);
 
   const handleBlockchainChange = useCallback((blockchain: Blockchain) => {
     console.log(`🔗 Blockchain changed to: ${blockchain}`);
@@ -101,6 +199,34 @@ function App() {
     setFilteredCoins([]);
     setError(null);
   }, []);
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (autoRefresh && filteredCoins.length > 0) {
+      console.log('⏰ Setting up auto-refresh interval (60 seconds)');
+      
+      intervalRef.current = setInterval(() => {
+        handleSearch(true);
+      }, 60000); // 60 seconds
+      
+      return () => {
+        if (intervalRef.current) {
+          console.log('⏹️ Clearing auto-refresh interval');
+          clearInterval(intervalRef.current);
+        }
+      };
+    } else {
+      if (intervalRef.current) {
+        console.log('⏹️ Clearing auto-refresh interval');
+        clearInterval(intervalRef.current);
+      }
+    }
+  }, [autoRefresh, filteredCoins.length, handleSearch]);
+
+  const toggleAutoRefresh = useCallback(() => {
+    setAutoRefresh(prev => !prev);
+    console.log(`🔄 Auto-refresh ${!autoRefresh ? 'enabled' : 'disabled'}`);
+  }, [autoRefresh]);
 
   return (
     <div className="min-h-screen bg-crypto-dark">
@@ -114,6 +240,11 @@ function App() {
             Analyze any token or discover early-stage meme coin opportunities before they moon
           </p>
         </header>
+
+        {/* Donation Banner */}
+        <div className="max-w-6xl mx-auto mb-8">
+          <DonationBanner />
+        </div>
 
         {/* Contract Analyzer */}
         <div className="max-w-6xl mx-auto mb-8">
@@ -152,25 +283,104 @@ function App() {
             </div>
           </div>
 
-          {/* Search Button */}
-          <div className="text-center mt-6">
-            <button
-              onClick={handleSearch}
-              disabled={isLoading}
-              className="btn-primary inline-flex items-center gap-2 text-lg px-8 py-4"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Searching...
-                </>
-              ) : (
-                <>
-                  <Search className="w-5 h-5" />
-                  Apply & Reload
-                </>
+          {/* Controls Row */}
+          <div className="mt-4 flex flex-col lg:flex-row items-center justify-between gap-4">
+            {/* Result Limit Selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-gray-400">Show top:</span>
+              <div className="flex gap-2">
+                {[15, 30, 50, 100].map((limit) => (
+                  <button
+                    key={limit}
+                    onClick={() => {
+                      console.log(`📊 Changing result limit to ${limit}`);
+                      setResultLimit(limit);
+                      
+                      // Re-apply limit to existing filtered results
+                      if (allCoins.length > 0) {
+                        const filtered = filterCoins(allCoins, filters);
+                        const sorted = sortCoinsByMarketCap(filtered);
+                        const limited = sorted.slice(0, limit);
+                        setFilteredCoins(limited);
+                        console.log(`✅ Updated display to show ${limited.length} results`);
+                      }
+                    }}
+                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                      resultLimit === limit
+                        ? 'bg-crypto-accent text-white'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                    }`}
+                  >
+                    {limit}
+                  </button>
+                ))}
+              </div>
+              <span className="text-gray-400 text-sm ml-2">results</span>
+            </div>
+
+            {/* View Selector */}
+            <ViewSelector
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+            />
+          </div>
+
+          {/* Search Button and Auto-Refresh Controls */}
+          <div className="text-center mt-6 space-y-4">
+            <div className="flex items-center justify-center gap-4">
+              <button
+                onClick={() => handleSearch(false)}
+                disabled={isLoading || isRefreshing}
+                className="btn-primary inline-flex items-center gap-2 text-lg px-8 py-4"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-5 h-5" />
+                    Apply & Reload
+                  </>
+                )}
+              </button>
+              
+              {filteredCoins.length > 0 && (
+                <button
+                  onClick={toggleAutoRefresh}
+                  className={`btn-secondary inline-flex items-center gap-2 px-6 py-4 ${
+                    autoRefresh ? 'bg-crypto-accent bg-opacity-20 border-crypto-accent' : ''
+                  }`}
+                  title={autoRefresh ? 'Disable auto-refresh' : 'Enable auto-refresh every minute'}
+                >
+                  <RefreshCw className={`w-5 h-5 ${autoRefresh && isRefreshing ? 'animate-spin' : ''}`} />
+                  {autoRefresh ? 'Auto-Refresh ON' : 'Auto-Refresh OFF'}
+                </button>
               )}
-            </button>
+              
+              {/* Test Filters Button - Development Only */}
+              {process.env.NODE_ENV === 'development' && (
+                <button
+                  onClick={() => {
+                    console.log('🧪 Running manual filter tests...');
+                    runAllFilterTests();
+                  }}
+                  className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm"
+                  title="Run filter logic tests"
+                >
+                  🧪 Test Filters
+                </button>
+              )}
+            </div>
+            
+            {/* Refresh Status */}
+            {autoRefresh && lastRefresh && (
+              <div className="text-sm text-gray-400">
+                <span>Last refresh: {lastRefresh.toLocaleTimeString()}</span>
+                {isRefreshing && <span className="ml-2">(Refreshing...)</span>}
+              </div>
+            )}
           </div>
         </div>
 
@@ -179,8 +389,9 @@ function App() {
           <div className="max-w-7xl mx-auto mb-4">
             <div className="bg-gray-800 rounded-lg p-4 text-sm text-gray-400">
               <p><strong>Debug Info:</strong></p>
-              <p>Selected: {selectedBlockchain} | All Coins: {allCoins.length} | Filtered: {filteredCoins.length}</p>
+              <p>Selected: {selectedBlockchain} | All Coins: {allCoins.length} | Filtered: {filteredCoins.length} | Auto-Refresh: {autoRefresh ? 'ON' : 'OFF'}</p>
               <p>Filters: MC ${filters.minMarketCap.toLocaleString()}-${filters.maxMarketCap.toLocaleString()}, Age {filters.minAge}-{filters.maxAge} days, Liquidity ${filters.minLiquidity.toLocaleString()}-${filters.maxLiquidity.toLocaleString()}</p>
+              {lastRefresh && <p>Last Refresh: {lastRefresh.toLocaleTimeString()}</p>}
             </div>
           </div>
         )}
@@ -192,7 +403,16 @@ function App() {
           {error && (
             <ErrorMessage 
               message={error}
-              onRetry={handleSearch}
+              onRetry={() => handleSearch(false)}
+            />
+          )}
+
+          {/* Filter Status - show when we have data */}
+          {!isLoading && !error && allCoins.length > 0 && (
+            <FilterStatus
+              totalCoins={allCoins.length}
+              filteredCoins={filteredCoins.length}
+              filters={filters}
             />
           )}
 
@@ -207,13 +427,14 @@ function App() {
             <div>
               <div className="mb-6">
                 <h2 className="text-2xl font-semibold text-white mb-2">
-                  Found {filteredCoins.length} coins matching your criteria
+                  Showing {filteredCoins.length} coins matching your criteria
                 </h2>
                 <p className="text-gray-400">
                   on {BLOCKCHAIN_CONFIGS[selectedBlockchain].displayName}
+                  {resultLimit < filteredCoins.length && ` (limited to top ${resultLimit})`}
                 </p>
               </div>
-              <CoinGrid coins={filteredCoins} />
+              <CoinGrid coins={filteredCoins} viewMode={viewMode} />
             </div>
           )}
 
@@ -228,6 +449,9 @@ function App() {
           )}
         </div>
       </div>
+      
+      {/* API Status Indicator */}
+      <ApiStatus errors={apiErrors} />
     </div>
   );
 }
