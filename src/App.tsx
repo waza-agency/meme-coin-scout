@@ -15,13 +15,23 @@ import ViewSelector from './components/ViewSelector';
 import DonationBanner from './components/DonationBanner';
 import ApiStatus from './components/ApiStatus';
 import FilterStatus from './components/FilterStatus';
-import './utils/test-apis'; // Load API test utilities
-import './utils/api-monitor'; // Load API error monitoring
-import './utils/social-mentions-debug'; // Load social mentions debugging
-import './debug-env.js'; // Load environment debugging
-import '../clear-cache.js'; // Load cache clearing utilities
-import { apiMonitor } from './utils/api-monitor';
-import { runAllFilterTests } from './utils/filter-test';
+// Conditionally import debug utilities only in development
+let apiMonitor: any = null;
+let runAllFilterTests: any = null;
+
+if (import.meta.env.DEV) {
+  // Dynamic imports for development-only utilities
+  import('./utils/test-apis'); // Load API test utilities
+  import('./utils/api-monitor').then(module => {
+    apiMonitor = module.apiMonitor;
+  }); // Load API error monitoring
+  import('./utils/social-mentions-debug'); // Load social mentions debugging
+  import('./debug-env.js'); // Load environment debugging
+  import('../clear-cache.js'); // Load cache clearing utilities
+  import('./utils/filter-test').then(module => {
+    runAllFilterTests = module.runAllFilterTests;
+  });
+}
 
 function App() {
   const [selectedBlockchain, setSelectedBlockchain] = useState<Blockchain>('solana');
@@ -52,13 +62,15 @@ function App() {
     solanaTracker: false
   });
 
-  // Subscribe to API error monitoring
+  // Subscribe to API error monitoring (development only)
   useEffect(() => {
-    const unsubscribe = apiMonitor.subscribe((errors) => {
-      setApiErrors(errors);
-    });
-    
-    return unsubscribe;
+    if (apiMonitor && import.meta.env.DEV) {
+      const unsubscribe = apiMonitor.subscribe((errors) => {
+        setApiErrors(errors);
+      });
+      
+      return unsubscribe;
+    }
   }, []);
 
   // Test API connection on component mount
@@ -82,7 +94,9 @@ function App() {
     if (process.env.NODE_ENV === 'development') {
       console.log('\n🧪 Running filter tests...');
       setTimeout(() => {
-        runAllFilterTests();
+        if (runAllFilterTests && import.meta.env.DEV) {
+          runAllFilterTests();
+        }
       }, 1000);
     }
   }, []);
@@ -364,7 +378,9 @@ function App() {
                 <button
                   onClick={() => {
                     console.log('🧪 Running manual filter tests...');
-                    runAllFilterTests();
+                    if (runAllFilterTests && import.meta.env.DEV) {
+          runAllFilterTests();
+        }
                   }}
                   className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm"
                   title="Run filter logic tests"
