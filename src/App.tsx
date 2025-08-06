@@ -90,16 +90,44 @@ function App() {
     
     testConnection();
     
-    // Run filter tests in development mode
+    // Run filter tests in development mode with cleanup
+    let filterTestTimeout: NodeJS.Timeout | null = null;
     if (process.env.NODE_ENV === 'development') {
       console.log('\n🧪 Running filter tests...');
-      setTimeout(() => {
+      filterTestTimeout = setTimeout(() => {
         if (runAllFilterTests && import.meta.env.DEV) {
           runAllFilterTests();
         }
       }, 1000);
     }
+
+    // Cleanup function to prevent memory leaks
+    return () => {
+      if (filterTestTimeout) {
+        clearTimeout(filterTestTimeout);
+        console.log('🧹 Cleared filter test timeout');
+      }
+    };
   }, []);
+
+  // Helper function to apply filtering, sorting, and limiting
+  const applyFiltersAndLimit = (
+    coins: Coin[], 
+    filterCriteria: FilterCriteria, 
+    limit: number
+  ): Coin[] => {
+    console.log(`🔄 Applying filters and limit to ${coins.length} coins`);
+    const filtered = filterCoins(coins, filterCriteria);
+    console.log(`📊 Filtered to ${filtered.length} coins`);
+    
+    const sorted = sortCoinsByMarketCap(filtered);
+    console.log(`📊 Sorted ${sorted.length} coins by market cap`);
+    
+    const limited = sorted.slice(0, limit);
+    console.log(`📊 Showing ${limited.length} results (limit: ${limit})`);
+    
+    return limited;
+  };
 
   // Helper function to compare coin arrays
   const areCoinsEqual = (coins1: Coin[], coins2: Coin[]) => {
@@ -142,15 +170,9 @@ function App() {
         console.log('Sample coin data:', coins[0]);
       }
       
-      const filtered = filterCoins(coins, filters);
-      console.log(`✅ Filtered to ${filtered.length} coins matching criteria`);
-      
-      const sorted = sortCoinsByMarketCap(filtered);
-      console.log(`📊 Sorted ${sorted.length} coins by market cap`);
-      
-      // Apply result limit
-      const limited = sorted.slice(0, resultLimit);
-      console.log(`📊 Showing ${limited.length} results (limit: ${resultLimit})`)
+      // Apply filtering, sorting, and limiting using reusable function
+      const limited = applyFiltersAndLimit(coins, filters, resultLimit);
+      console.log(`✅ Processed ${coins.length} coins -> ${limited.length} final results`)
       
       // Only update state if data has changed
       if (!isAutoRefresh || !areCoinsEqual(limited, filteredCoins)) {
@@ -198,9 +220,7 @@ function App() {
     // Automatically re-filter existing data when filters change
     if (allCoins.length > 0) {
       console.log('🔄 Auto-filtering existing data with new criteria');
-      const filtered = filterCoins(allCoins, newFilters);
-      const sorted = sortCoinsByMarketCap(filtered);
-      const limited = sorted.slice(0, resultLimit);
+      const limited = applyFiltersAndLimit(allCoins, newFilters, resultLimit);
       setFilteredCoins(limited);
       console.log(`✅ Re-filtered to ${limited.length} coins`);
     }
@@ -312,9 +332,7 @@ function App() {
                       
                       // Re-apply limit to existing filtered results
                       if (allCoins.length > 0) {
-                        const filtered = filterCoins(allCoins, filters);
-                        const sorted = sortCoinsByMarketCap(filtered);
-                        const limited = sorted.slice(0, limit);
+                        const limited = applyFiltersAndLimit(allCoins, filters, limit);
                         setFilteredCoins(limited);
                         console.log(`✅ Updated display to show ${limited.length} results`);
                       }

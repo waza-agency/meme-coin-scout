@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Coin } from '../types';
 import { formatMarketCap, calculateAge, getBubblemapsUrl } from '../utils/filters';
-import { TrendingUp, TrendingDown, Copy, Users } from 'lucide-react';
+import { TrendingUp, TrendingDown, Copy, Users, Check } from 'lucide-react';
 import { getRiskLevel } from '../utils/indicators';
 
 interface CoinCardCompactProps {
@@ -12,9 +13,19 @@ const CoinCardCompact: React.FC<CoinCardCompactProps> = ({ coin }) => {
   const age = coin.pairCreatedAt ? calculateAge(coin.pairCreatedAt) : 0;
   const riskLevel = getRiskLevel(coin);
   const momentum = coin.priceChange?.h24 || 0;
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus('success');
+      setTimeout(() => setCopyStatus('idle'), 2000);
+    } catch (error) {
+      const fallbackError = error instanceof Error ? error.message : 'Unable to copy to clipboard';
+      console.warn('Failed to copy to clipboard:', fallbackError);
+      setCopyStatus('error');
+      setTimeout(() => setCopyStatus('idle'), 2000);
+    }
   };
 
   const handleClick = () => {
@@ -94,14 +105,18 @@ const CoinCardCompact: React.FC<CoinCardCompactProps> = ({ coin }) => {
             <Users className="w-3 h-3" />
           </button>
           <button
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
-              copyToClipboard(coin.baseToken?.address || '');
+              await copyToClipboard(coin.baseToken?.address || '');
             }}
-            className="p-1 hover:bg-gray-600 rounded text-gray-400 hover:text-white transition-colors"
-            title="Copy contract address"
+            className={`p-1 hover:bg-gray-600 rounded transition-colors ${
+              copyStatus === 'success' ? 'text-green-400' : 
+              copyStatus === 'error' ? 'text-red-400' : 
+              'text-gray-400 hover:text-white'
+            }`}
+            title={copyStatus === 'success' ? 'Copied!' : copyStatus === 'error' ? 'Copy failed' : 'Copy contract address'}
           >
-            <Copy className="w-3 h-3" />
+            {copyStatus === 'success' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
           </button>
         </div>
       </div>

@@ -12,7 +12,7 @@ export interface DebugResult {
 
 export class SocialMentionsDebugger {
   private results: DebugResult[] = [];
-  private proxyUrl = 'http://localhost:3007';
+  private proxyUrl = import.meta.env.VITE_PROXY_URL || 'http://localhost:3007';
 
   async runFullDiagnostic(): Promise<DebugResult[]> {
     this.results = [];
@@ -45,7 +45,7 @@ export class SocialMentionsDebugger {
   }
 
   private async checkEnvironment() {
-    const twitterToken = (import.meta as any).env?.VITE_TWITTER_BEARER_TOKEN || '';
+    const twitterToken = import.meta.env.VITE_TWITTER_BEARER_TOKEN || '';
     
     if (!twitterToken) {
       this.addResult(
@@ -69,13 +69,15 @@ export class SocialMentionsDebugger {
       return;
     }
     
-    if (!twitterToken.startsWith('AAAAAAAAAAAAAAAAAAAAAA')) {
+    // Validate token format - should contain URL-safe Base64 and URL-encoded characters
+    const validTokenPattern = /^[A-Za-z0-9\-_=%]+$/;
+    if (!validTokenPattern.test(twitterToken)) {
       this.addResult(
         'Environment Check', 
         'warning', 
-        'Twitter token format looks unusual',
-        { tokenPrefix: twitterToken.substring(0, 20) },
-        'Verify this is a valid Twitter Bearer Token'
+        'Twitter token contains invalid characters',
+        { tokenPrefix: twitterToken.substring(0, 15) + '...' },
+        'Twitter Bearer Tokens should only contain alphanumeric, dash, underscore, equals, and percent characters'
       );
       return;
     }

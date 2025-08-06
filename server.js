@@ -8,9 +8,32 @@ dotenv.config({ path: '.env.local' });
 const app = express();
 const PORT = process.env.PORT || 3007;
 
+// Dynamic CORS configuration based on environment
+const getAllowedOrigins = () => {
+  // Read from environment variable, fallback to default localhost origins for development
+  const envOrigins = process.env.VITE_CORS_ORIGINS;
+  
+  if (envOrigins) {
+    return envOrigins.split(',').map(origin => origin.trim());
+  }
+  
+  // Default origins for local development
+  return [
+    'http://localhost:3000',
+    'http://localhost:3001', 
+    'http://localhost:3002',
+    'http://localhost:3003',
+    'http://localhost:3005',
+    'http://localhost:3006',
+    'http://localhost:3007',
+    'http://localhost:5173', // Vite default port
+    'http://localhost:4173'  // Vite preview port
+  ];
+};
+
 // Enable CORS for frontend
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003', 'http://localhost:3005', 'http://localhost:3006', 'http://localhost:3007'],
+  origin: getAllowedOrigins(),
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -43,14 +66,8 @@ app.get('/api/twitter/search', async (req, res) => {
       });
     }
 
-    // Token validation temporarily disabled - let's test the actual API
-    console.log('🔍 Debug - Token info:');
-    console.log('- Token length:', twitterBearerToken.length);
-    console.log('- Token prefix:', twitterBearerToken.substring(0, 30));
-    console.log('✅ Proceeding to Twitter API call...');
-
     console.log(`🐦 Proxy: Searching Twitter for "${query}" (max: ${max_results})`);
-    console.log(`🔑 Using token: ${twitterBearerToken.substring(0, 15)}...`);
+    console.log('🔑 Twitter Bearer Token configured, proceeding with API call...');
     
     const response = await axios.get('https://api.x.com/2/tweets/search/recent', {
       params: {
@@ -150,7 +167,20 @@ app.get('/api/twitter/search', async (req, res) => {
 app.get('/api/dexscreener/tokens/:address', async (req, res) => {
   try {
     const address = req.params.address;
-    const queryString = req.url.split('?')[1] || '';
+    
+    // Whitelist allowed query parameters for DexScreener API
+    const allowedParams = ['chain', 'include', 'exclude', 'boosts'];
+    const sanitizedQuery = {};
+    
+    // Only include whitelisted parameters
+    Object.keys(req.query).forEach(key => {
+      if (allowedParams.includes(key) && req.query[key]) {
+        sanitizedQuery[key] = req.query[key];
+      }
+    });
+    
+    // Build sanitized query string
+    const queryString = new URLSearchParams(sanitizedQuery).toString();
     const fullUrl = `https://api.dexscreener.com/latest/dex/tokens/${address}${queryString ? '?' + queryString : ''}`;
     
     console.log(`🔗 DexScreener proxy: ${fullUrl}`);

@@ -2,6 +2,22 @@ import axios from 'axios';
 import { SocialMentionsData } from '../types';
 import { cacheService, CACHE_TTL } from './cache';
 
+// Cache TTL for error results (5 minutes)
+const ERROR_CACHE_TTL = 300000;
+
+// Development-only logging utilities
+const devLog = (message: string, ...args: unknown[]) => {
+  if (import.meta.env.DEV) {
+    console.log(message, ...args);
+  }
+};
+
+const devWarn = (message: string, ...args: unknown[]) => {
+  if (import.meta.env.DEV) {
+    console.warn(message, ...args);
+  }
+};
+
 /**
  * Reddit API integration for social mentions
  * Uses public Reddit JSON API - no authentication required
@@ -25,10 +41,10 @@ export class RedditMentionsService {
   private readonly maxRetries = 2;
 
   constructor() {
-    console.log('🔥 Reddit Mentions Service initialized');
-    console.log(`- Target subreddits: ${this.targetSubreddits.length}`);
-    console.log(`- Request timeout: ${this.requestTimeout}ms`);
-    console.log('⚠️ Note: Reddit may be rate limiting this IP due to development testing');
+    devLog('🔥 Reddit Mentions Service initialized');
+    devLog(`- Target subreddits: ${this.targetSubreddits.length}`);
+    devLog(`- Request timeout: ${this.requestTimeout}ms`);
+    devLog('⚠️ Note: Reddit may be rate limiting this IP due to development testing');
   }
 
   /**
@@ -42,25 +58,26 @@ export class RedditMentionsService {
     const cachedData = cacheService.get<SocialMentionsData | null>(cacheKey);
     
     if (cachedData !== null) {
-      console.log(`💰 Cache hit for Reddit mentions: ${query}`);
+      devLog(`💰 Cache hit for Reddit mentions: ${query}`);
       return cachedData;
     }
 
-    console.log(`🔍 Searching Reddit mentions for: ${query} (${timeframe})`);
+    devLog(`🔍 Searching Reddit mentions for: ${query} (${timeframe})`);
 
     try {
       const redditData = await this.fetchRedditMentions(query, timeframe);
       
       // Cache successful results for 10 minutes
       cacheService.set(cacheKey, redditData, CACHE_TTL.SOCIAL_MENTIONS);
-      console.log(`📦 Cached Reddit mentions for ${query} (10 min TTL)`);
+      devLog(`📦 Cached Reddit mentions for ${query} (10 min TTL)`);
       
       return redditData;
-    } catch (error: any) {
-      console.warn(`⚠️ Reddit search failed for ${query}:`, error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      devWarn(`⚠️ Reddit search failed for ${query}:`, errorMessage);
       
       // Cache null result for 5 minutes to prevent spam
-      cacheService.set(cacheKey, null, 300000);
+      cacheService.set(cacheKey, null, ERROR_CACHE_TTL);
       return null;
     }
   }
@@ -72,10 +89,10 @@ export class RedditMentionsService {
     const searchTerm = this.normalizeQuery(query);
     const timeSort = this.getTimeSort(timeframe);
     
-    console.log(`🎯 Reddit search strategy:`);
-    console.log(`- Query: ${searchTerm}`);
-    console.log(`- Sort: ${timeSort}`);
-    console.log(`- Subreddits: ${this.targetSubreddits.length}`);
+    devLog(`🎯 Reddit search strategy:`);
+    devLog(`- Query: ${searchTerm}`);
+    devLog(`- Sort: ${timeSort}`);
+    devLog(`- Subreddits: ${this.targetSubreddits.length}`);
 
     // Collect posts from multiple sources
     const allPosts: RedditPost[] = [];
@@ -84,9 +101,9 @@ export class RedditMentionsService {
     try {
       const generalPosts = await this.searchRedditGeneral(searchTerm, timeSort);
       allPosts.push(...generalPosts);
-      console.log(`✅ General search: ${generalPosts.length} posts`);
+      devLog(`✅ General search: ${generalPosts.length} posts`);
     } catch (error) {
-      console.warn('⚠️ General Reddit search failed:', error);
+      devWarn('⚠️ General Reddit search failed:', error);
     }
 
     // 2. Subreddit-specific searches
@@ -94,18 +111,18 @@ export class RedditMentionsService {
       try {
         const subredditPosts = await this.searchSubreddit(subreddit, searchTerm, timeSort);
         allPosts.push(...subredditPosts);
-        console.log(`✅ r/${subreddit}: ${subredditPosts.length} posts`);
+        devLog(`✅ r/${subreddit}: ${subredditPosts.length} posts`);
         
         // Small delay to be respectful to Reddit's servers
         await this.delay(200);
       } catch (error) {
-        console.warn(`⚠️ r/${subreddit} search failed:`, error);
+        devWarn(`⚠️ r/${subreddit} search failed:`, error);
       }
     }
 
     // Remove duplicates and analyze
     const uniquePosts = this.removeDuplicatePosts(allPosts);
-    console.log(`📊 Total unique posts found: ${uniquePosts.length}`);
+    devLog(`📊 Total unique posts found: ${uniquePosts.length}`);
 
     if (uniquePosts.length === 0) {
       return this.getEmptyResult();
@@ -183,9 +200,9 @@ export class RedditMentionsService {
       }
 
       return response;
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (retryCount < this.maxRetries && this.shouldRetry(error)) {
-        console.log(`🔄 Retrying Reddit request (${retryCount + 1}/${this.maxRetries})...`);
+        devLog(`🔄 Retrying Reddit request (${retryCount + 1}/${this.maxRetries})...`);
         await this.delay(1000 * (retryCount + 1)); // Exponential backoff
         return this.makeRequest(url, params, retryCount + 1);
       }
@@ -223,7 +240,7 @@ export class RedditMentionsService {
    * Analyze posts to generate social mentions data
    */
   private analyzePosts(posts: RedditPost[], query: string): SocialMentionsData {
-    console.log(`📈 Analyzing ${posts.length} Reddit posts for ${query}...`);
+    devLog(`📈 Analyzing ${posts.length} Reddit posts for ${query}...`);
 
     const sentiment = this.analyzeSentiment(posts);
     const topMentions = this.getTopMentions(posts);
@@ -231,12 +248,12 @@ export class RedditMentionsService {
     const current24h = posts.length;
     const totalReach = posts.reduce((sum, post) => sum + (post.score * 10), 0); // Estimate reach
 
-    console.log(`📊 Reddit analysis results:`);
-    console.log(`- Posts: ${current24h}`);
-    console.log(`- Avg score: ${(posts.reduce((sum, p) => sum + p.score, 0) / posts.length).toFixed(1)}`);
-    console.log(`- Avg comments: ${(posts.reduce((sum, p) => sum + p.numComments, 0) / posts.length).toFixed(1)}`);
-    console.log(`- Sentiment: ${sentiment.positive}+ ${sentiment.negative}- ${sentiment.neutral}=`);
-    console.log(`- Est. reach: ${totalReach.toLocaleString()}`);
+    devLog(`📊 Reddit analysis results:`);
+    devLog(`- Posts: ${current24h}`);
+    devLog(`- Avg score: ${(posts.reduce((sum, p) => sum + p.score, 0) / posts.length).toFixed(1)}`);
+    devLog(`- Avg comments: ${(posts.reduce((sum, p) => sum + p.numComments, 0) / posts.length).toFixed(1)}`);
+    devLog(`- Sentiment: ${sentiment.positive}+ ${sentiment.negative}- ${sentiment.neutral}=`);
+    devLog(`- Est. reach: ${totalReach.toLocaleString()}`);
 
     return {
       current24h,
@@ -286,12 +303,16 @@ export class RedditMentionsService {
       }
     });
 
-    // Normalize to integer counts
+    // Normalize to integer counts ensuring total equals posts.length
     const total = positive + negative + neutral;
+    const normalizedPositive = Math.round((positive / total) * posts.length);
+    const normalizedNegative = Math.round((negative / total) * posts.length);
+    const normalizedNeutral = posts.length - normalizedPositive - normalizedNegative;
+    
     return {
-      positive: Math.round((positive / total) * posts.length),
-      negative: Math.round((negative / total) * posts.length),
-      neutral: Math.round((neutral / total) * posts.length)
+      positive: normalizedPositive,
+      negative: normalizedNegative,
+      neutral: Math.max(0, normalizedNeutral) // Ensure neutral is never negative
     };
   }
 
@@ -387,11 +408,27 @@ export class RedditMentionsService {
   /**
    * Determine if error should trigger retry
    */
-  private shouldRetry(error: any): boolean {
-    return error.code === 'ECONNRESET' ||
-           error.code === 'ETIMEDOUT' ||
-           error.response?.status === 429 ||
-           error.response?.status >= 500;
+  private shouldRetry(error: unknown): boolean {
+    // Type guard to check if error has expected properties
+    if (error && typeof error === 'object') {
+      const err = error as Record<string, unknown>;
+      
+      // Check for network error codes
+      if (typeof err.code === 'string' && 
+          (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT')) {
+        return true;
+      }
+      
+      // Check for HTTP response errors (axios-like structure)
+      if (err.response && typeof err.response === 'object') {
+        const response = err.response as Record<string, unknown>;
+        if (typeof response.status === 'number') {
+          return response.status === 429 || response.status >= 500;
+        }
+      }
+    }
+    
+    return false;
   }
 
   /**
