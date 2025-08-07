@@ -1,6 +1,5 @@
 import { Coin } from '../types';
 import { RugCheckRiskData } from '../services/rugcheck';
-import { SocialMentionsData, SocialMentionsIndicator } from '../types';
 import { WhaleActivityData, WhaleActivityIndicator } from '../types';
 
 export type RiskLevel = 'high' | 'medium' | 'low';
@@ -73,93 +72,6 @@ export const calculateLiquidityIndicator = (coin: Coin): LiquidityIndicator => {
   };
 };
 
-/**
- * Calculate social mentions indicator based on 24h activity
- */
-export const calculateSocialMentionsIndicator = (
-  socialData: SocialMentionsData | null
-): SocialMentionsIndicator => {
-  if (!socialData) {
-    return {
-      trend: 'stable',
-      changePercent: 0,
-      current24h: 0,
-      label: 'API Error',
-      color: 'text-red-500',
-      sentiment: 'neutral',
-      confidence: 0,
-    };
-  }
-
-  const { changePercent, current24h, sentiment } = socialData;
-  
-  // Determine trend based on change percentage (lowered thresholds)
-  let trend: 'up' | 'down' | 'stable';
-  let color: string;
-  
-  if (changePercent > 10) {
-    trend = 'up';
-    color = 'text-green-500';
-  } else if (changePercent < -10) {
-    trend = 'down';
-    color = 'text-red-500';
-  } else {
-    trend = 'stable';
-    color = 'text-yellow-500';
-  }
-  
-  // Determine overall sentiment
-  const totalSentiment = sentiment.positive + sentiment.negative + sentiment.neutral;
-  let overallSentiment: 'positive' | 'negative' | 'neutral';
-  
-  if (totalSentiment === 0) {
-    overallSentiment = 'neutral';
-  } else if (sentiment.positive > sentiment.negative && sentiment.positive > sentiment.neutral) {
-    overallSentiment = 'positive';
-  } else if (sentiment.negative > sentiment.positive && sentiment.negative > sentiment.neutral) {
-    overallSentiment = 'negative';
-  } else {
-    overallSentiment = 'neutral';
-  }
-  
-  // Create more informative label based on mentions and sentiment
-  let label: string;
-  if (current24h === 0) {
-    label = 'No Mentions';
-  } else if (current24h === 1) {
-    label = `1 mention (${overallSentiment})`;
-  } else if (current24h < 10) {
-    label = `${current24h} mentions (${overallSentiment})`;
-  } else if (current24h < 50) {
-    label = `${current24h} mentions (${overallSentiment})`;
-  } else {
-    label = `${current24h}+ mentions (${overallSentiment})`;
-  }
-  
-  // Calculate confidence based on number of mentions
-  let confidence: number;
-  if (current24h >= 50) {
-    confidence = 100;
-  } else if (current24h >= 20) {
-    confidence = 80;
-  } else if (current24h >= 10) {
-    confidence = 60;
-  } else if (current24h >= 5) {
-    confidence = 40;
-  } else {
-    confidence = 20;
-  }
-  
-  return {
-    trend,
-    changePercent,
-    current24h,
-    label,
-    color,
-    sentiment: overallSentiment,
-    confidence,
-  };
-};
 
 /**
  * Calculate risk factor based on multiple indicators

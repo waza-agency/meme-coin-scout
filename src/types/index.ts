@@ -125,33 +125,6 @@ export interface ApiError {
   status?: number;
 }
 
-// Social Mentions Types
-export interface SocialMentionsData {
-  current24h: number;
-  previous24h: number;
-  change: number;
-  changePercent: number;
-  sentiment: {
-    positive: number;
-    negative: number;
-    neutral: number;
-  };
-  totalReach: number;
-  topMentions: Array<{
-    platform: string;
-    content: string;
-    engagement: number;
-    timestamp: number;
-  }>;
-}
-
-export interface SocialMentionsIndicator {
-  trend: 'up' | 'down' | 'stable';
-  changePercent: number;
-  current24h: number;
-  label: string;
-  color: string;
-  sentiment: 'positive' | 'negative' | 'neutral';
   confidence: number;
 }
 

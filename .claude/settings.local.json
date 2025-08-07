@@ -37,7 +37,8 @@
       "Bash(node src/debug-env.js)",
       "Bash(node clear-cache.js)",
       "Bash(node -e \"require('dotenv').config*\")",
-      "Bash(devvit new:*)"
+      "Bash(devvit new:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": []
   }

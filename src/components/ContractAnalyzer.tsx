@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import { Search, AlertCircle, Copy, Check } from 'lucide-react';
 import { rugCheckService, RugCheckRiskData } from '../services/rugcheck';
-import { socialMentionsService } from '../services/social-mentions';
 import { whaleActivityService } from '../services/whale-activity';
 import { technicalAnalysisService } from '../services/technical-analysis';
 import { holderAnalysisService } from '../services/holder-analysis';
-import { calculateRiskIndicator, calculateLiquidityIndicator, calculateSocialMentionsIndicator, calculateWhaleActivityIndicator } from '../utils/indicators';
-import SocialMentionsIndicator from './SocialMentionsIndicator';
+import { calculateRiskIndicator, calculateLiquidityIndicator, calculateWhaleActivityIndicator } from '../utils/indicators';
 import WhaleActivityIndicator from './WhaleActivityIndicator';
 import { TechnicalAnalysisIndicator } from './TechnicalAnalysisIndicator';
 import { HolderAnalysisIndicator } from './HolderAnalysisIndicator';
@@ -16,7 +14,6 @@ import RugCheckModal from './RugCheckModal';
 import { 
   Coin, 
   TokenData,
-  SocialMentionsData, 
   WhaleActivityData, 
   TechnicalData
 } from '../types';
@@ -31,7 +28,6 @@ export const ContractAnalyzer: React.FC<ContractAnalyzerProps> = ({ onTokenFound
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [tokenData, setTokenData] = useState<Coin | null>(null);
   const [rugCheckData, setRugCheckData] = useState<RugCheckRiskData | null>(null);
-  const [socialMentionsData, setSocialMentionsData] = useState<SocialMentionsData | null>(null);
   const [whaleActivityData, setWhaleActivityData] = useState<WhaleActivityData | null>(null);
   const [technicalData, setTechnicalData] = useState<TechnicalData | null>(null);
   const [holderData, setHolderData] = useState<HolderAnalysisData | null>(null);
@@ -111,7 +107,6 @@ export const ContractAnalyzer: React.FC<ContractAnalyzerProps> = ({ onTokenFound
     setError(null);
     setTokenData(null);
     setRugCheckData(null);
-    setSocialMentionsData(null);
     setWhaleActivityData(null);
     setTechnicalData(null);
     setHolderData(null);
@@ -152,7 +147,6 @@ export const ContractAnalyzer: React.FC<ContractAnalyzerProps> = ({ onTokenFound
       
       const [
         rugCheckResult,
-        socialMentionsResult,
         whaleActivityResult,
         technicalResult,
         holderResult
@@ -160,11 +154,6 @@ export const ContractAnalyzer: React.FC<ContractAnalyzerProps> = ({ onTokenFound
         rugCheckService.getTokenRisk(address)
           .catch((err: any) => {
             console.warn('❌ Rug check failed:', err);
-            return null;
-          }),
-        socialMentionsService.searchMentions(token.baseToken.symbol)
-          .catch((err: any) => {
-            console.warn('❌ Social mentions failed:', err);
             return null;
           }),
         whaleActivityService.getWhaleActivity(tokenAnalysisData)
@@ -194,12 +183,6 @@ export const ContractAnalyzer: React.FC<ContractAnalyzerProps> = ({ onTokenFound
         console.log('⚠️ No rug check data available');
       }
       
-      if (socialMentionsResult.status === 'fulfilled' && socialMentionsResult.value) {
-        console.log('✅ Social mentions data processed successfully:', socialMentionsResult.value);
-        setSocialMentionsData(socialMentionsResult.value);
-      } else {
-        console.log('⚠️ No social mentions data available');
-      }
       
       if (whaleActivityResult.status === 'fulfilled' && whaleActivityResult.value) {
         console.log('✅ Whale activity data processed successfully');
@@ -248,7 +231,6 @@ export const ContractAnalyzer: React.FC<ContractAnalyzerProps> = ({ onTokenFound
   // Calculate indicators
   const riskIndicator = tokenData ? calculateRiskIndicator(tokenData, rugCheckData || undefined) : null;
   const liquidityIndicator = tokenData ? calculateLiquidityIndicator(tokenData) : null;
-  const socialIndicator = socialMentionsData ? calculateSocialMentionsIndicator(socialMentionsData) : null;
   const whaleIndicator = whaleActivityData ? calculateWhaleActivityIndicator(whaleActivityData) : null;
 
   return (
@@ -365,13 +347,6 @@ export const ContractAnalyzer: React.FC<ContractAnalyzerProps> = ({ onTokenFound
               />
             )}
 
-            {/* Social Mentions */}
-            {socialIndicator && (
-              <SocialMentionsIndicator 
-                indicator={socialIndicator}
-                showCount={true}
-              />
-            )}
 
             {/* Whale Activity */}
             {whaleIndicator && (
@@ -400,45 +375,6 @@ export const ContractAnalyzer: React.FC<ContractAnalyzerProps> = ({ onTokenFound
 
           {/* Detailed Analysis */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Social Mentions Details */}
-            {socialMentionsData && (
-              <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
-                <h4 className="text-lg font-semibold text-white mb-3">Social Activity</h4>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">24h Mentions:</span>
-                    <span className="text-white font-medium">{socialMentionsData.current24h}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Previous 24h:</span>
-                    <span className="text-white font-medium">{socialMentionsData.previous24h}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Change:</span>
-                    <span className={`font-medium ${
-                      socialMentionsData.changePercent >= 0 ? 'text-green-400' : 'text-red-400'
-                    }`}>
-                      {socialMentionsData.changePercent >= 0 ? '+' : ''}
-                      {socialMentionsData.changePercent.toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Sentiment:</span>
-                    <div className="flex gap-2 text-sm">
-                      <span className="text-green-400">
-                        {socialMentionsData.sentiment.positive}% pos
-                      </span>
-                      <span className="text-red-400">
-                        {socialMentionsData.sentiment.negative}% neg
-                      </span>
-                      <span className="text-gray-400">
-                        {socialMentionsData.sentiment.neutral}% neu
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Whale Activity Details */}
             {whaleActivityData && (

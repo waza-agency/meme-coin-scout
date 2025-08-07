@@ -2,22 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { ExternalLink, TrendingUp, TrendingDown, Copy, Check, Users } from 'lucide-react';
 import { Coin } from '../types';
 import { formatMarketCap, formatAge, calculateAge, getTokenImageUrl, getBubblemapsUrl } from '../utils/filters';
-import { calculateLiquidityIndicator, calculateRiskIndicator, calculateSocialMentionsIndicator, calculateWhaleActivityIndicator } from '../utils/indicators';
+import { calculateLiquidityIndicator, calculateRiskIndicator, calculateWhaleActivityIndicator } from '../utils/indicators';
 import { rugCheckService, RugCheckRiskData } from '../services/rugcheck';
-import { socialMentionsService } from '../services/social-mentions';
 import { whaleActivityService } from '../services/whale-activity';
 import { technicalAnalysisService } from '../services/technical-analysis';
 import { holderAnalysisService } from '../services/holder-analysis';
-import { SocialMentionsData, WhaleActivityData, TechnicalData } from '../types';
+import { WhaleActivityData, TechnicalData } from '../types';
 import { HolderAnalysisData } from '../services/holder-analysis';
 import LiquidityIndicator from './LiquidityIndicator';
 import RiskIndicator from './RiskIndicator';
-import SocialMentionsIndicator from './SocialMentionsIndicator';
 import WhaleActivityIndicator from './WhaleActivityIndicator';
 import { TechnicalAnalysisIndicator } from './TechnicalAnalysisIndicator';
 import { HolderAnalysisIndicator } from './HolderAnalysisIndicator';
 import RugCheckModal from './RugCheckModal';
-import SocialMentionsError from './SocialMentionsError';
 
 interface CoinCardProps {
   coin: Coin;
@@ -26,9 +23,6 @@ interface CoinCardProps {
 const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
   const [rugCheckData, setRugCheckData] = useState<RugCheckRiskData | null>(null);
   const [rugCheckLoading, setRugCheckLoading] = useState(false);
-  const [socialMentionsData, setSocialMentionsData] = useState<SocialMentionsData | null>(null);
-  const [socialMentionsLoading, setSocialMentionsLoading] = useState(false);
-  const [socialMentionsError, setSocialMentionsError] = useState<string | null>(null);
   const [whaleActivityData, setWhaleActivityData] = useState<WhaleActivityData | null>(null);
   const [whaleActivityLoading, setWhaleActivityLoading] = useState(false);
   const [technicalData, setTechnicalData] = useState<TechnicalData | null>(null);
@@ -64,32 +58,6 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
     fetchRugCheckData();
   }, [contractAddress, coin.chainId, coin.dexId]);
 
-  // Fetch social mentions data on mount
-  useEffect(() => {
-    const fetchSocialMentionsData = async () => {
-      setSocialMentionsLoading(true);
-      setSocialMentionsError(null);
-      try {
-        // Use token symbol as the search query
-        const searchQuery = coin.baseToken.symbol;
-        const data = await socialMentionsService.searchMentions(searchQuery, '24h');
-        if (data === null) {
-          // API returned null - this means real APIs are unavailable (likely rate limited)
-          setSocialMentionsError(null); // Don't show error, just show no data
-          setSocialMentionsData(null);
-        } else {
-          setSocialMentionsData(data);
-        }
-      } catch (error: any) {
-        console.warn('Failed to fetch social mentions data:', error);
-        setSocialMentionsError(error.message || 'Failed to fetch social data');
-      } finally {
-        setSocialMentionsLoading(false);
-      }
-    };
-    
-    fetchSocialMentionsData();
-  }, [coin.baseToken.symbol]);
 
   // Fetch whale activity data on mount
   useEffect(() => {
@@ -196,7 +164,6 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
   // Calculate indicators
   const liquidityIndicator = calculateLiquidityIndicator(coin);
   const riskIndicator = calculateRiskIndicator(coin, rugCheckData || undefined);
-  const socialMentionsIndicator = calculateSocialMentionsIndicator(socialMentionsData);
   const whaleActivityIndicator = calculateWhaleActivityIndicator(whaleActivityData || {
     last24h: { totalBuys: 0, totalSells: 0, netFlow: 0, uniqueWhales: 0, largestTransaction: 0, transactions: [] },
     last7d: { totalBuys: 0, totalSells: 0, netFlow: 0, uniqueWhales: 0, avgDailyVolume: 0 },
@@ -297,20 +264,6 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
           ) : null}
         </div>
         <div className="flex items-center gap-1">
-          <SocialMentionsIndicator 
-            indicator={socialMentionsIndicator} 
-            showCount={true}
-            showDetails={true}
-          />
-          <div className="text-xs text-gray-500">
-            {socialMentionsLoading ? (
-              <span className="animate-pulse">🔄</span>
-            ) : socialMentionsData ? (
-              <span title={`${socialMentionsData.current24h} social mentions`}>📱</span>
-            ) : (
-              <span title="No social mentions data">📱</span>
-            )}
-          </div>
         </div>
         <div className="flex items-center gap-1">
           <WhaleActivityIndicator 
@@ -428,33 +381,6 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin }) => {
           </div>
         )}
 
-        {/* Social Mentions */}
-        {socialMentionsError ? (
-          <SocialMentionsError error={socialMentionsError} />
-        ) : socialMentionsData ? (
-          <div className="flex items-center justify-between">
-            <span className="text-gray-400 text-sm">Social 24h</span>
-            <div className="flex items-center gap-1">
-              <span className="text-white text-sm font-medium">
-                {socialMentionsData.current24h} mentions
-              </span>
-              {socialMentionsData.changePercent !== 0 && (
-                <span className={`text-xs ${
-                  socialMentionsData.changePercent > 0 ? 'text-green-400' : 'text-red-400'
-                }`}>
-                  {socialMentionsData.changePercent > 0 ? '+' : ''}{socialMentionsData.changePercent.toFixed(1)}%
-                </span>
-              )}
-            </div>
-          </div>
-        ) : socialMentionsLoading ? (
-          <div className="flex items-center justify-between">
-            <span className="text-gray-400 text-sm">Social 24h</span>
-            <span className="text-gray-400 text-sm animate-pulse">Loading...</span>
-          </div>
-        ) : (
-          <SocialMentionsError />
-        )}
 
         {/* Price Change (if available) */}
         {priceChange !== undefined && (

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FilterCriteria } from '../types';
 
 interface FilterControlsProps {
@@ -12,10 +12,54 @@ const FilterControls: React.FC<FilterControlsProps> = ({
   onFilterChange,
   disabled = false
 }) => {
-  const handleChange = (field: keyof FilterCriteria, value: string) => {
-    // Remove commas and dollar signs, then convert to number
-    const cleanValue = value.replace(/[$,]/g, '');
-    const numValue = parseInt(cleanValue) || 0;
+  // Local state for input values (with formatting)
+  const [localValues, setLocalValues] = useState({
+    minMarketCap: filters.minMarketCap.toLocaleString(),
+    maxMarketCap: filters.maxMarketCap.toLocaleString(),
+    minAge: filters.minAge.toString(),
+    maxAge: filters.maxAge.toString(),
+    minLiquidity: filters.minLiquidity.toLocaleString(),
+    maxLiquidity: filters.maxLiquidity.toLocaleString(),
+  });
+
+  // Track if field is focused
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  // Update local values when filters change from outside (e.g., presets)
+  useEffect(() => {
+    setLocalValues({
+      minMarketCap: filters.minMarketCap.toLocaleString(),
+      maxMarketCap: filters.maxMarketCap.toLocaleString(),
+      minAge: filters.minAge.toString(),
+      maxAge: filters.maxAge.toString(),
+      minLiquidity: filters.minLiquidity.toLocaleString(),
+      maxLiquidity: filters.maxLiquidity.toLocaleString(),
+    });
+  }, [filters]);
+
+  const handleInputChange = (field: keyof FilterCriteria, value: string) => {
+    // Remove all non-numeric characters except commas
+    const cleanValue = value.replace(/[^0-9,]/g, '');
+    
+    // Update local state immediately for responsive typing
+    setLocalValues(prev => ({
+      ...prev,
+      [field]: cleanValue
+    }));
+  };
+
+  const handleInputFocus = (field: string, e: React.FocusEvent<HTMLInputElement>) => {
+    setFocusedField(field);
+    // Select all text when focusing
+    e.target.select();
+  };
+
+  const handleInputBlur = (field: keyof FilterCriteria) => {
+    setFocusedField(null);
+    
+    // Parse the value when user leaves the field
+    const value = localValues[field];
+    const numValue = parseInt(value.replace(/,/g, '')) || 0;
     
     // Basic validation for range fields
     let validatedValue = numValue;
@@ -52,12 +96,38 @@ const FilterControls: React.FC<FilterControlsProps> = ({
       newFilters.minLiquidity = validatedValue;
     }
     
+    // Update the formatted value in local state
+    if (field === 'minAge' || field === 'maxAge') {
+      setLocalValues(prev => ({
+        ...prev,
+        [field]: validatedValue.toString()
+      }));
+    } else {
+      setLocalValues(prev => ({
+        ...prev,
+        [field]: validatedValue.toLocaleString()
+      }));
+    }
+    
     onFilterChange(newFilters);
   };
 
-  // Format number with commas for display
-  const formatDisplayValue = (value: number): string => {
-    return value.toLocaleString();
+  const handleKeyPress = (e: React.KeyboardEvent, field: keyof FilterCriteria) => {
+    if (e.key === 'Enter') {
+      handleInputBlur(field);
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, field: keyof FilterCriteria) => {
+    // When user presses backspace or delete on selected text, clear the field
+    if ((e.key === 'Backspace' || e.key === 'Delete') && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === e.currentTarget.value.length) {
+      e.preventDefault();
+      setLocalValues(prev => ({
+        ...prev,
+        [field]: ''
+      }));
+    }
   };
 
   return (
@@ -76,8 +146,12 @@ const FilterControls: React.FC<FilterControlsProps> = ({
                 <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm">$</span>
                 <input
                   type="text"
-                  value={formatDisplayValue(filters.minMarketCap)}
-                  onChange={(e) => handleChange('minMarketCap', e.target.value)}
+                  value={localValues.minMarketCap}
+                  onChange={(e) => handleInputChange('minMarketCap', e.target.value)}
+                  onFocus={(e) => handleInputFocus('minMarketCap', e)}
+                  onBlur={() => handleInputBlur('minMarketCap')}
+                  onKeyPress={(e) => handleKeyPress(e, 'minMarketCap')}
+                  onKeyDown={(e) => handleKeyDown(e, 'minMarketCap')}
                   disabled={disabled}
                   className="input-field w-full pl-6"
                   placeholder="1,000"
@@ -91,8 +165,12 @@ const FilterControls: React.FC<FilterControlsProps> = ({
                 <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm">$</span>
                 <input
                   type="text"
-                  value={formatDisplayValue(filters.maxMarketCap)}
-                  onChange={(e) => handleChange('maxMarketCap', e.target.value)}
+                  value={localValues.maxMarketCap}
+                  onChange={(e) => handleInputChange('maxMarketCap', e.target.value)}
+                  onFocus={(e) => handleInputFocus('maxMarketCap', e)}
+                  onBlur={() => handleInputBlur('maxMarketCap')}
+                  onKeyPress={(e) => handleKeyPress(e, 'maxMarketCap')}
+                  onKeyDown={(e) => handleKeyDown(e, 'maxMarketCap')}
                   disabled={disabled}
                   className="input-field w-full pl-6"
                   placeholder="10,000,000"
@@ -110,26 +188,32 @@ const FilterControls: React.FC<FilterControlsProps> = ({
             <div className="space-y-2">
               <label className="block text-sm text-gray-400">Minimum</label>
               <input
-                type="number"
-                value={filters.minAge}
-                onChange={(e) => handleChange('minAge', e.target.value)}
+                type="text"
+                value={localValues.minAge}
+                onChange={(e) => handleInputChange('minAge', e.target.value)}
+                onFocus={(e) => handleInputFocus('minAge', e)}
+                onBlur={() => handleInputBlur('minAge')}
+                onKeyPress={(e) => handleKeyPress(e, 'minAge')}
+                onKeyDown={(e) => handleKeyDown(e, 'minAge')}
                 disabled={disabled}
                 className="input-field w-full"
                 placeholder="0"
-                min="0"
               />
             </div>
             
             <div className="space-y-2">
               <label className="block text-sm text-gray-400">Maximum</label>
               <input
-                type="number"
-                value={filters.maxAge}
-                onChange={(e) => handleChange('maxAge', e.target.value)}
+                type="text"
+                value={localValues.maxAge}
+                onChange={(e) => handleInputChange('maxAge', e.target.value)}
+                onFocus={(e) => handleInputFocus('maxAge', e)}
+                onBlur={() => handleInputBlur('maxAge')}
+                onKeyPress={(e) => handleKeyPress(e, 'maxAge')}
+                onKeyDown={(e) => handleKeyDown(e, 'maxAge')}
                 disabled={disabled}
                 className="input-field w-full"
                 placeholder="30"
-                min="0"
               />
             </div>
           </div>
@@ -146,8 +230,12 @@ const FilterControls: React.FC<FilterControlsProps> = ({
                 <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm">$</span>
                 <input
                   type="text"
-                  value={formatDisplayValue(filters.minLiquidity)}
-                  onChange={(e) => handleChange('minLiquidity', e.target.value)}
+                  value={localValues.minLiquidity}
+                  onChange={(e) => handleInputChange('minLiquidity', e.target.value)}
+                  onFocus={(e) => handleInputFocus('minLiquidity', e)}
+                  onBlur={() => handleInputBlur('minLiquidity')}
+                  onKeyPress={(e) => handleKeyPress(e, 'minLiquidity')}
+                  onKeyDown={(e) => handleKeyDown(e, 'minLiquidity')}
                   disabled={disabled}
                   className="input-field w-full pl-6"
                   placeholder="1,000"
@@ -161,8 +249,12 @@ const FilterControls: React.FC<FilterControlsProps> = ({
                 <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm">$</span>
                 <input
                   type="text"
-                  value={formatDisplayValue(filters.maxLiquidity)}
-                  onChange={(e) => handleChange('maxLiquidity', e.target.value)}
+                  value={localValues.maxLiquidity}
+                  onChange={(e) => handleInputChange('maxLiquidity', e.target.value)}
+                  onFocus={(e) => handleInputFocus('maxLiquidity', e)}
+                  onBlur={() => handleInputBlur('maxLiquidity')}
+                  onKeyPress={(e) => handleKeyPress(e, 'maxLiquidity')}
+                  onKeyDown={(e) => handleKeyDown(e, 'maxLiquidity')}
                   disabled={disabled}
                   className="input-field w-full pl-6"
                   placeholder="5,000,000"
@@ -221,4 +313,4 @@ const FilterControls: React.FC<FilterControlsProps> = ({
   );
 };
 
-export default FilterControls; 
+export default FilterControls;

@@ -13,21 +13,12 @@ import NoResults from './components/NoResults';
 import ContractAnalyzer from './components/ContractAnalyzer';
 import ViewSelector from './components/ViewSelector';
 import DonationBanner from './components/DonationBanner';
-import ApiStatus from './components/ApiStatus';
 import FilterStatus from './components/FilterStatus';
 // Conditionally import debug utilities only in development
-let apiMonitor: any = null;
 let runAllFilterTests: any = null;
 
 if (import.meta.env.DEV) {
   // Dynamic imports for development-only utilities
-  import('./utils/test-apis'); // Load API test utilities
-  import('./utils/api-monitor').then(module => {
-    apiMonitor = module.apiMonitor;
-  }); // Load API error monitoring
-  import('./utils/social-mentions-debug'); // Load social mentions debugging
-  import('./debug-env.js'); // Load environment debugging
-  import('../clear-cache.js'); // Load cache clearing utilities
   import('./utils/filter-test').then(module => {
     runAllFilterTests = module.runAllFilterTests;
   });
@@ -55,23 +46,6 @@ function App() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [resultLimit, setResultLimit] = useState<number>(30);
   const [viewMode, setViewMode] = useState<ViewMode>('detailed');
-  const [apiErrors, setApiErrors] = useState({
-    xai: false,
-    twitter: false,
-    rugcheck: false,
-    solanaTracker: false
-  });
-
-  // Subscribe to API error monitoring (development only)
-  useEffect(() => {
-    if (apiMonitor && import.meta.env.DEV) {
-      const unsubscribe = apiMonitor.subscribe((errors) => {
-        setApiErrors(errors);
-      });
-      
-      return unsubscribe;
-    }
-  }, []);
 
   // Test API connection on component mount
   useEffect(() => {
@@ -190,7 +164,7 @@ function App() {
       
       if (coins.length === 0) {
         console.log('⚠️ No coins found from API');
-      } else if (filtered.length === 0) {
+      } else if (limited.length === 0) {
         console.log('⚠️ No coins matched filter criteria');
       } else {
         console.log('✅ Search completed successfully');
@@ -484,8 +458,6 @@ function App() {
         </div>
       </div>
       
-      {/* API Status Indicator */}
-      <ApiStatus errors={apiErrors} />
     </div>
   );
 }

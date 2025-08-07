@@ -135,152 +135,169 @@ class ApiService {
   }
 
   async getAllTokensForBlockchain(blockchain: Blockchain): Promise<Coin[]> {
-    const blockchainConfig = BLOCKCHAIN_CONFIGS[blockchain];
+    console.log(`⚡ Using fast comprehensive token discovery for ${blockchain}...`);
     
-    console.log(`Fetching all tokens for ${blockchain}...`);
-    
-    // Much more comprehensive search queries including specific meme coins
-    const searchQueries = [
-      // Native tokens
-      blockchainConfig.name.toUpperCase(),
-      blockchain.toUpperCase(),
-      
-      // Quote tokens for this blockchain
-      ...blockchainConfig.quoteTokens,
-      
-      // Popular stablecoins and pairs
-      'USDC', 'USDT', 'USD', 'BUSD',
-      
-      // Popular meme tokens and patterns
-      'MEME', 'SHIB', 'DOGE', 'PEPE', 'FLOKI', 'BONK',
-      'USELESS', 'USELESS COIN', // Adding specific search for useless coin
-      'DICKBUTT', 'BUTT', 'DICK', // Adding more specific searches
-      
-      // Common trading pairs
-      'BTC', 'ETH', 'BNB',
-      
-      // More meme coin patterns
-      'BABY', 'SAFE', 'MOON', 'ELON', 'SHIBA', 'INU',
-      'ROCKET', 'DIAMOND', 'APE', 'WOJAK', 'CHAD',
-      'CATS', 'DOGS', 'FROG', 'BEAR', 'BULL',
-      'TRUMP', 'BIDEN', 'PUTIN', 'XI', // Political memes
-      'LAMBO', 'RICH', 'POOR', 'WAGMI', // Crypto culture
-      'GM', 'GN', 'LFG', 'NGMI', // Crypto slang
-      
-      // Blockchain-specific popular tokens
-      ...(blockchain === 'solana' ? ['WSOL', 'PYTH', 'JUP', 'WIF', 'POPCAT', 'MYRO', 'BOME', 'SMOL', 'PONKE'] : []),
-      ...(blockchain === 'base' ? ['CBETH', 'AERO', 'BALD', 'TOSHI', 'DEGEN', 'BRETT'] : []),
-      ...(blockchain === 'sui' ? ['CETUS', 'TURBOS', 'SUI', 'BUCK', 'BLUB'] : []),
-      ...(blockchain === 'tron' ? ['JST', 'SUN', 'WIN', 'NFT', 'BTT'] : []),
-      
-      // Generic searches to catch more tokens
-      'TOKEN', 'COIN', 'PUMP', 'MOON', 'FINANCE', 'PROTOCOL',
-      'SWAP', 'DEX', 'DAO', 'DEFI', 'NFT',
-      
-      // Two-letter combinations to find more tokens
-      'AA', 'AI', 'GO', 'UP', 'OK', 'NO', 'YES', 'LOL',
-      
-      // Popular token searches (removed single letters that cause CORS issues)
-      'BTC', 'ETH', 'SOL',
-      
-      // Numbers and combinations (removed single digits)
-      '420', '69', '100', '1000', '10000', '100X', '1000X'
-    ];
-
-    console.log(`Will search with ${searchQueries.length} different queries`);
-
-    // Also search for specific known contract addresses
-    const knownContracts: Record<Blockchain, string[]> = {
-      solana: [
-        'SBYS2yTH988WFCKUfDzXz26rtHmKBgMhxJ99Tjpbonk', // DICKBUTT
-        // Add more known contracts here
-      ],
-      base: [],
-      sui: [],
-      tron: []
-    };
-
-    const promises = [
-      ...searchQueries.map(query => this.searchPairsForBlockchain(blockchain, query)),
-      ...knownContracts[blockchain].map(address => this.searchByContractAddress(address))
-    ];
-
     try {
-      const results = await Promise.allSettled(promises);
-      const allCoins: Coin[] = [];
-      const seenPairs = new Set<string>();
-
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-          console.log(`Search query ${index + 1}/${searchQueries.length} (${searchQueries[index]}) returned ${result.value.length} pairs`);
-          result.value.forEach(coin => {
-            // Use contract address for deduplication instead of pair address
-            const contractAddress = coin.baseToken.address;
-            const deduplicationKey = `${contractAddress}_${coin.chainId}`;
-            
-            if (!seenPairs.has(deduplicationKey)) {
-              seenPairs.add(deduplicationKey);
-              
-              // Enhance coin data with additional fields
-              const enhancedCoin = {
-                ...coin,
-                contractAddress: coin.baseToken.address, // Set primary contract address
-                holderCount: undefined // Will be fetched from blockchain explorers in future
-              };
-              
-              allCoins.push(enhancedCoin);
-              
-              // Log specific coins we're looking for
-              const symbol = coin.baseToken.symbol?.toLowerCase() || '';
-              if (symbol.includes('useless') || symbol.includes('unstable') || symbol.includes('catgif')) {
-                console.log(`🎯 FOUND TARGET COIN: ${coin.baseToken.symbol} (${contractAddress.slice(0, 8)}...) - MC: ${coin.marketCap || coin.fdv || 'N/A'}, Age: ${coin.pairCreatedAt || 'N/A'}`);
-              }
-              
-              console.log(`Added unique token: ${coin.baseToken.symbol} (${contractAddress.slice(0, 8)}...)`);
-            } else {
-              console.log(`Skipped duplicate token: ${coin.baseToken.symbol} (${contractAddress.slice(0, 8)}...)`);
-            }
-          });
-        } else {
-          console.error(`Search query ${index + 1}/${searchQueries.length} (${searchQueries[index]}) failed:`, result.reason);
-        }
-      });
-
-      console.log(`Total unique pairs found for ${blockchain}: ${allCoins.length}`);
+      // Import the fast API service
+      const { fastApiService } = await import('./fast-api');
       
-      // Log sample data for debugging and look for specific coins
-      if (allCoins.length > 0) {
-        console.log('Sample of found coins:');
-        allCoins.slice(0, 10).forEach((coin, i) => {
-          console.log(`${i + 1}. ${coin.baseToken?.symbol}/${coin.quoteToken?.symbol} - MC: ${coin.marketCap || coin.fdv || 'N/A'}, Age: ${coin.pairCreatedAt || 'N/A'}, Chain: ${coin.chainId}`);
-        });
-        
-        // Search for specific coins mentioned by user
-        const uselessCoins = allCoins.filter(coin => 
-          coin.baseToken?.symbol?.toLowerCase().includes('useless') ||
-          coin.baseToken?.name?.toLowerCase().includes('useless')
-        );
-        
-        if (uselessCoins.length > 0) {
-          console.log(`🎯 Found ${uselessCoins.length} "useless" coins:`, uselessCoins.map(c => ({
-            symbol: c.baseToken.symbol,
-            marketCap: c.marketCap || c.fdv,
-            age: c.pairCreatedAt,
-            contractAddress: c.baseToken.address
-          })));
+      // Use fast approach to get comprehensive token data
+      const tokens = await fastApiService.getAllTokensForBlockchain(blockchain);
+      
+      console.log(`✅ Fast discovery returned ${tokens.length} tokens`);
+      
+      // Additional deduplication to fix duplicate issues
+      const deduplicatedTokens = this.deduplicateTokens(tokens);
+      console.log(`🔧 After deduplication: ${deduplicatedTokens.length} unique tokens`);
+      
+      return deduplicatedTokens;
+      
+    } catch (error) {
+      console.error(`❌ Fast discovery failed:`, error);
+      
+      // Simple fallback
+      console.log(`🔄 Using simple fallback...`);
+      const fallbackTokens = await this.searchPairsForBlockchain(blockchain, 'USDC');
+      return this.deduplicateTokens(fallbackTokens);
+    }
+  }
+
+  // Improved deduplication method
+  private deduplicateTokens(tokens: Coin[]): Coin[] {
+    const seen = new Map<string, Coin>();
+    
+    tokens.forEach(token => {
+      const contractAddress = token.baseToken?.address;
+      if (contractAddress) {
+        // Keep the token with the highest volume or liquidity
+        const existing = seen.get(contractAddress);
+        if (!existing) {
+          seen.set(contractAddress, token);
         } else {
-          console.log('⚠️ No "useless" coins found in results');
-          // Show available symbols to help debug
-          const availableSymbols = allCoins.map(c => c.baseToken?.symbol).filter(Boolean).slice(0, 50);
-          console.log('Available symbols (first 50):', availableSymbols);
+          const existingLiquidity = existing.liquidity?.usd || 0;
+          const newLiquidity = token.liquidity?.usd || 0;
+          const existingVolume = existing.volume?.h24 || 0;
+          const newVolume = token.volume?.h24 || 0;
+          
+          // Keep the token with better data (higher liquidity or volume)
+          if (newLiquidity > existingLiquidity || newVolume > existingVolume) {
+            seen.set(contractAddress, token);
+          }
         }
       }
+    });
+    
+    const result = Array.from(seen.values());
+    console.log(`🔧 Deduplication: ${tokens.length} -> ${result.length} tokens`);
+    return result;
+  }
+
+  // Fetch recently updated token profiles - this is our main source of current tokens
+  async fetchTokenProfiles(blockchain: Blockchain): Promise<Coin[]> {
+    try {
+      const url = 'https://api.dexscreener.com/token-profiles/latest/v1';
+      console.log('📋 Fetching latest token profiles...');
       
-      return allCoins;
+      const response = await this.makeRequest(url);
+      const profiles = response.data || [];
+      
+      // Filter by blockchain
+      const blockchainConfig = BLOCKCHAIN_CONFIGS[blockchain];
+      const filtered = profiles.filter((profile: any) => 
+        profile.chainId === blockchainConfig.chainId || 
+        profile.chainId === blockchain
+      );
+      
+      console.log(`Found ${filtered.length} token profiles for ${blockchain}`);
+      
+      // For each profile, fetch the actual token data
+      const tokenPromises = filtered.slice(0, 100).map((profile: any) => 
+        this.searchByContractAddress(profile.tokenAddress)
+      );
+      
+      const results = await Promise.allSettled(tokenPromises);
+      const coins: Coin[] = [];
+      
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          coins.push(...result.value);
+        }
+      });
+      
+      console.log(`📋 Fetched ${coins.length} tokens from profiles`);
+      return coins;
     } catch (error) {
-      console.error(`Error fetching all tokens for ${blockchain}:`, error);
-      throw new Error(`Failed to fetch tokens for ${blockchain}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('❌ Error fetching token profiles:', error);
+      return [];
     }
+  }
+
+  // Fetch boosted/trending tokens
+  async fetchBoostedTokens(blockchain: Blockchain): Promise<Coin[]> {
+    try {
+      const url = 'https://api.dexscreener.com/token-boosts/top/v1';
+      console.log('🚀 Fetching boosted tokens...');
+      
+      const response = await this.makeRequest(url);
+      const boostedTokens = response.data || [];
+      
+      // Filter by blockchain
+      const blockchainConfig = BLOCKCHAIN_CONFIGS[blockchain];
+      const filtered = boostedTokens.filter((token: any) => 
+        token.chainId === blockchainConfig.chainId || 
+        token.chainId === blockchain
+      );
+      
+      console.log(`Found ${filtered.length} boosted tokens for ${blockchain}`);
+      
+      // Fetch actual token data for each boosted token
+      const tokenPromises = filtered.map((token: any) => 
+        this.searchByContractAddress(token.tokenAddress)
+      );
+      
+      const results = await Promise.allSettled(tokenPromises);
+      const coins: Coin[] = [];
+      
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          coins.push(...result.value);
+        }
+      });
+      
+      console.log(`🚀 Fetched ${coins.length} boosted tokens`);
+      return coins;
+    } catch (error) {
+      console.error('❌ Error fetching boosted tokens:', error);
+      return [];
+    }
+  }
+
+  // Perform broad search as fallback - but much more targeted
+  async performBroadSearch(blockchain: Blockchain): Promise<Coin[]> {
+    console.log('🔍 Performing targeted broad search...');
+    
+    // Use only the most effective search terms that typically yield many results
+    const broadSearchTerms = [
+      'USDC', 'USDT', // These will give us most active pairs
+      'SOL', 'ETH', 'BTC', // Major base currencies
+      'AI', 'MEME', 'PEPE' // Popular categories
+    ];
+    
+    const promises = broadSearchTerms.map(term => 
+      this.searchPairsForBlockchain(blockchain, term)
+    );
+    
+    const results = await Promise.allSettled(promises);
+    const coins: Coin[] = [];
+    
+    results.forEach(result => {
+      if (result.status === 'fulfilled' && result.value) {
+        coins.push(...result.value);
+      }
+    });
+    
+    console.log(`🔍 Broad search returned ${coins.length} additional tokens`);
+    return coins;
   }
 
   // Add a method to test API connectivity
@@ -300,7 +317,7 @@ class ApiService {
   async searchByContractAddress(address: string): Promise<Coin[]> {
     try {
       const searchUrl = `https://api.dexscreener.com/latest/dex/tokens/${address}`;
-      console.log(`Searching for token by contract address: ${address}`);
+      console.log(`🔍 Searching for token by contract: ${address.slice(0, 8)}...`);
       
       const response = await this.makeRequest(searchUrl);
       const data: DexScreenerResponse = response.data;
@@ -310,13 +327,45 @@ class ApiService {
         return [];
       }
 
-      console.log(`Found ${data.pairs.length} pairs for contract ${address}`);
+      console.log(`Found ${data.pairs.length} pairs for contract ${address.slice(0, 8)}...`);
       return data.pairs;
     } catch (error) {
-      console.error(`Error searching by contract address ${address}:`, error);
+      console.error(`❌ Error searching contract ${address.slice(0, 8)}...:`, error);
       return [];
     }
   }
+
+  // Fetch known high-volume contracts for the blockchain
+  async fetchKnownContracts(blockchain: Blockchain): Promise<Coin[]> {
+    const knownContracts: Record<Blockchain, string[]> = {
+      solana: [
+        'GUy9Tu8YtvvHoL3DcXLJxXvEN8PqEus6mWQUEchcbonk', // BOSS token
+        '4mWTS6KztDEoMu2uqsnbgbeGRh6chjq7Fbpmbr1Ypump', // TOPLESS token
+        // Add more as we discover popular tokens
+      ],
+      base: [],
+      sui: [],
+      tron: []
+    };
+
+    const contracts = knownContracts[blockchain] || [];
+    if (contracts.length === 0) return [];
+
+    console.log(`📋 Fetching ${contracts.length} known contracts for ${blockchain}...`);
+
+    const promises = contracts.map(address => this.searchByContractAddress(address));
+    const results = await Promise.allSettled(promises);
+    
+    const coins: Coin[] = [];
+    results.forEach(result => {
+      if (result.status === 'fulfilled' && result.value) {
+        coins.push(...result.value);
+      }
+    });
+
+    console.log(`📋 Fetched ${coins.length} tokens from known contracts`);
+    return coins;
+  }
 }
 
-export const apiService = new ApiService(); 
+export const apiService = new ApiService();
