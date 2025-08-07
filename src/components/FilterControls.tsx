@@ -22,8 +22,6 @@ const FilterControls: React.FC<FilterControlsProps> = ({
     maxLiquidity: filters.maxLiquidity.toLocaleString(),
   });
 
-  // Track if field is focused
-  const [focusedField, setFocusedField] = useState<string | null>(null);
 
   // Update local values when filters change from outside (e.g., presets)
   useEffect(() => {
@@ -49,13 +47,11 @@ const FilterControls: React.FC<FilterControlsProps> = ({
   };
 
   const handleInputFocus = (field: string, e: React.FocusEvent<HTMLInputElement>) => {
-    setFocusedField(field);
     // Select all text when focusing
     e.target.select();
   };
 
   const handleInputBlur = (field: keyof FilterCriteria) => {
-    setFocusedField(null);
     
     // Parse the value when user leaves the field
     const value = localValues[field];

@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { socialMentionsService } from '../services/social-mentions';
 
 const X_API_BASE_URL = 'https://api.x.com/2';
 
@@ -43,14 +42,11 @@ export async function testSocialAPIs() {
   console.log('🧪 Testing Social Media APIs...');
   
   try {
-    // Test with a known token (BTC)
-    const result = await socialMentionsService.searchMentions('BTC', '24h');
+    // Social mentions service has been removed
+    const result = null;
     
     if (result) {
       console.log('✅ Social API Test Successful!');
-      console.log('- Mentions in 24h:', result.current24h);
-      console.log('- Sentiment:', result.sentiment);
-      console.log('- Total Reach:', result.totalReach);
       console.log('- Full result object:', result);
       return { success: true, data: result };
     } else {

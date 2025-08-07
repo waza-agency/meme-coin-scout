@@ -125,9 +125,6 @@ export interface ApiError {
   status?: number;
 }
 
-  confidence: number;
-}
-
 export interface WhaleTransaction {
   hash: string;
   timestamp: number;
