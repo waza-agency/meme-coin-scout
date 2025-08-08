@@ -33,7 +33,15 @@ class FastApiService {
         // Handle CORS proxy response formats
         if (response.data && typeof response.data === 'object') {
           if (response.data.contents) {
-            return JSON.parse(response.data.contents);
+            try {
+              // Attempt to parse the contents as JSON
+              return JSON.parse(response.data.contents);
+            } catch (parseError) {
+              console.error('Failed to parse JSON from CORS proxy response:', parseError);
+              console.log('Raw contents:', response.data.contents);
+              // If parsing fails, return the raw contents or throw error
+              throw new Error(`Invalid JSON in API response: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`);
+            }
           } else if (response.data.pairs || response.data.schemaVersion) {
             return response.data;
           }
@@ -92,72 +100,68 @@ class FastApiService {
     }
   }
 
-  // Fetch trending/popular pairs using DexScreener's actual data endpoints
-  private async fetchTrendingPairs(blockchain: Blockchain): Promise<Coin[]> {
+  // Helper method to fetch tokens by endpoint and address field
+  private async fetchTokensByEndpoint(
+    blockchain: Blockchain,
+    endpoint: string,
+    addressField: string,
+    errorMessage: string
+  ): Promise<Coin[]> {
     const blockchainConfig = BLOCKCHAIN_CONFIGS[blockchain];
     const results: Coin[] = [];
 
     try {
-      // Get boosted tokens (trending/promoted)
-      const boostData = await this.makeRequest('https://api.dexscreener.com/token-boosts/top/v1');
-      if (Array.isArray(boostData)) {
-        const chainBoosts = boostData.filter((boost: any) => 
-          boost.chainId === blockchainConfig.chainId || boost.chainId === blockchain
+      // Fetch data from the specified endpoint
+      const data = await this.makeRequest(endpoint);
+      if (Array.isArray(data)) {
+        // Filter items for the specified blockchain
+        const chainItems = data.filter((item: any) => 
+          item.chainId === blockchainConfig.chainId || item.chainId === blockchain
         );
 
-        for (const boost of chainBoosts) {
+        // Fetch token data for each item
+        for (const item of chainItems) {
           try {
-            const tokenData = await this.makeRequest(`https://api.dexscreener.com/latest/dex/tokens/${boost.tokenAddress}`);
+            const tokenAddress = item[addressField];
+            if (!tokenAddress) continue;
+            
+            const tokenData = await this.makeRequest(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`);
             if (tokenData.pairs) {
               results.push(...tokenData.pairs.filter((pair: any) => 
                 pair.chainId === blockchainConfig.chainId || pair.chainId === blockchain
               ));
             }
           } catch (e) {
-            // Skip failed tokens
+            // Skip failed tokens - continue processing others
           }
         }
       }
 
       return results;
     } catch (error) {
-      console.error('❌ Error fetching trending pairs:', error);
+      console.error(errorMessage, error);
       return [];
     }
   }
 
+  // Fetch trending/popular pairs using DexScreener's actual data endpoints
+  private async fetchTrendingPairs(blockchain: Blockchain): Promise<Coin[]> {
+    return this.fetchTokensByEndpoint(
+      blockchain,
+      'https://api.dexscreener.com/token-boosts/top/v1',
+      'tokenAddress',
+      '❌ Error fetching trending pairs:'
+    );
+  }
+
   // Fetch new pairs - recently launched tokens
   private async fetchNewPairs(blockchain: Blockchain): Promise<Coin[]> {
-    const blockchainConfig = BLOCKCHAIN_CONFIGS[blockchain];
-    const results: Coin[] = [];
-
-    try {
-      // Get token profiles (recently updated/created)
-      const profileData = await this.makeRequest('https://api.dexscreener.com/token-profiles/latest/v1');
-      if (Array.isArray(profileData)) {
-        const chainProfiles = profileData.filter((profile: any) => 
-          profile.chainId === blockchainConfig.chainId || profile.chainId === blockchain
-        );
-
-        for (const profile of chainProfiles) {
-          try {
-            const tokenData = await this.makeRequest(`https://api.dexscreener.com/latest/dex/tokens/${profile.tokenAddress}`);
-            if (tokenData.pairs) {
-              results.push(...tokenData.pairs.filter((pair: any) => 
-                pair.chainId === blockchainConfig.chainId || pair.chainId === blockchain
-              ));
-            }
-          } catch (e) {
-            // Skip failed tokens
-          }
-        }
-      }
-
-      return results;
-    } catch (error) {
-      console.error('❌ Error fetching new pairs:', error);
-      return [];
-    }
+    return this.fetchTokensByEndpoint(
+      blockchain,
+      'https://api.dexscreener.com/token-profiles/latest/v1',
+      'tokenAddress',
+      '❌ Error fetching new pairs:'
+    );
   }
 
   // Fetch pairs by volume/activity - this should get us many active tokens

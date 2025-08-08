@@ -9,8 +9,6 @@
       "Bash(pkill -f \"vite\")",
       "Bash(pkill -f \"node server.js\")",
       "Bash(pkill -f \"npm run\")",
-      "Bash(taskkill /PID * /F)",
-      "Bash(cmd //c \"taskkill /PID * /F\")",
       "WebFetch(domain:docs.x.ai)",
       "Bash(./clear-cache.bat)",
       "Bash(npm cache clean:*)",
@@ -37,8 +35,7 @@
       "Bash(node src/debug-env.js)",
       "Bash(node clear-cache.js)",
       "Bash(node -e \"require('dotenv').config*\")",
-      "Bash(devvit new:*)",
-      "Bash(taskkill:*)"
+      "Bash(devvit new:*)"
     ],
     "deny": []
   }

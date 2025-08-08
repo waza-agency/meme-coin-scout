@@ -10,6 +10,11 @@ interface BlockchainToken {
   priority?: 'high' | 'normal';
 }
 
+interface CacheEntry {
+  data: Coin[];
+  timestamp: number;
+}
+
 class BlockchainApiService {
   // Get comprehensive token list from blockchain sources - prioritize active trading tokens
   async getAllTokensFromBlockchain(blockchain: Blockchain): Promise<BlockchainToken[]> {
@@ -133,13 +138,23 @@ class BlockchainApiService {
     });
   }
 
-  // Enrich a single token with DexScreener data (with caching)
+  // Enrich a single token with DexScreener data (with caching and expiration)
   private async enrichSingleTokenWithCache(token: BlockchainToken, blockchain: Blockchain): Promise<Coin[]> {
-    // Check cache first
     const cacheKey = `enrich_${token.address}`;
+    const currentTime = Date.now();
+    
+    // Check cache first and validate expiration
     const cached = this.enrichmentCache.get(cacheKey);
     if (cached) {
-      return cached;
+      const cacheAge = currentTime - cached.timestamp;
+      if (cacheAge < this.CACHE_EXPIRATION_MS) {
+        // Cache is still fresh, return cached data
+        return cached.data;
+      } else {
+        // Cache is stale, remove it
+        this.enrichmentCache.delete(cacheKey);
+        console.log(`🔄 Cache expired for token ${token.symbol}, refreshing...`);
+      }
     }
     
     try {
@@ -154,18 +169,53 @@ class BlockchainApiService {
         );
       }
       
-      // Cache the result (even if empty) to avoid re-querying
-      this.enrichmentCache.set(cacheKey, result);
+      // Cache the result with timestamp (even if empty) to avoid re-querying
+      this.enrichmentCache.set(cacheKey, {
+        data: result,
+        timestamp: currentTime
+      });
       return result;
     } catch (error) {
-      // Cache empty result to avoid retrying failed requests
-      this.enrichmentCache.set(cacheKey, []);
+      // Cache empty result with timestamp to avoid retrying failed requests
+      this.enrichmentCache.set(cacheKey, {
+        data: [],
+        timestamp: currentTime
+      });
       return [];
     }
   }
 
-  // Simple in-memory cache for enriched tokens
-  private enrichmentCache = new Map<string, Coin[]>();
+  // Simple in-memory cache for enriched tokens with expiration
+  private enrichmentCache = new Map<string, CacheEntry>();
+  // Cache expiration time in milliseconds (5 minutes)
+  private readonly CACHE_EXPIRATION_MS = 5 * 60 * 1000;
+  
+  // Method to clean up expired cache entries (can be called periodically)
+  public cleanupExpiredCache(): number {
+    const currentTime = Date.now();
+    let cleanedCount = 0;
+    
+    for (const [key, entry] of this.enrichmentCache.entries()) {
+      const cacheAge = currentTime - entry.timestamp;
+      if (cacheAge >= this.CACHE_EXPIRATION_MS) {
+        this.enrichmentCache.delete(key);
+        cleanedCount++;
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log(`🧹 Cleaned up ${cleanedCount} expired cache entries`);
+    }
+    
+    return cleanedCount;
+  }
+  
+  // Method to clear entire cache (useful for manual refresh)
+  public clearCache(): void {
+    const size = this.enrichmentCache.size;
+    this.enrichmentCache.clear();
+    console.log(`🗑️ Cleared ${size} cache entries`);
+  }
 
   // Fetch tokens from Jupiter (comprehensive Solana token list)
   private async fetchJupiterTokens(): Promise<BlockchainToken[]> {
