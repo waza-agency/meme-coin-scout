@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npm run build:*)",
       "Bash(curl:*)",
-      "Read(//c/Users/sango/Pictures/Screenshots/**)"
+      "Read(//c/Users/sango/Pictures/Screenshots/**)",
+      "Bash(git push:*)",
+      "Bash(npm run preview:*)",
+      "Bash(git commit:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
