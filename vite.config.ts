@@ -7,6 +7,13 @@ export default defineConfig({
     port: 3000,
     open: true
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
+      },
+    },
+  },
   define: {
     global: 'globalThis',
   },
